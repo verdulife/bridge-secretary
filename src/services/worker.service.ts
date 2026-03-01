@@ -25,29 +25,75 @@ export class WorkerService {
     setTimeout(() => this.pollEmails(), 10000);
   }
 
+  private static isWithinWorkingHours(hl?: string, tz?: string): boolean {
+    if (!hl || hl === "24/7" || !tz) return true;
+    try {
+      const [startStr, endStr] = hl.split("-");
+      const start = parseInt(startStr, 10);
+      const end = parseInt(endStr, 10);
+      const formatter = new Intl.DateTimeFormat('en-US', { hour: 'numeric', hourCycle: 'h23', timeZone: tz });
+      const currentHour = parseInt(formatter.format(new Date()), 10);
+      return currentHour >= start && currentHour < end;
+    } catch (e) {
+      return true; // Ante la duda o error al parsear TZ, notificamos
+    }
+  }
+
   private static async pollEmails() {
-    console.log("🔍 Bridge Worker: Revisando bandejas de entrada...");
+    console.log("🔍 Bridge Worker: Revisando correos pendientes...");
 
     try {
       const users = await DBService.getUsersWithGoogle();
 
       for (const user of users) {
         try {
-          const newEmails = await GoogleService.getNewEmails(user.id, user.last_email_id);
+          const profile = await DBService.getUserProfile(user.id);
+          const context = await DBService.getCurrentContext(user.id);
 
-          if (newEmails.length > 0) {
-            console.log(`📩 ${newEmails.length} correos nuevos para usuario ${user.id}`);
+          const labels = await GoogleService.ensureBridgeLabels(user.id);
+          if (!labels) continue;
 
-            for (const email of newEmails) {
-              // 1. Analizar con IA
+          const unreviewed = await GoogleService.getUnreviewedEmails(user.id, labels.revisado);
+
+          if (unreviewed.length > 0) {
+            console.log(`📩 ${unreviewed.length} correos no revisados para usuario ${user.id}`);
+
+            let spamCount = 0;
+            const alertsToSend = [];
+
+            for (const email of unreviewed) {
               const analysis = await AIService.analyzeProactiveEmail(email);
 
-              // 2. Enviar alerta a Telegram
-              await MessageHandler.sendProactiveAlert(this.bot, user.id, email, analysis);
+              // Evitar volver a procesarlo en el siguiente ciclo
+              await GoogleService.labelEmail(user.id, email.id, labels.revisado);
+
+              if (analysis.is_spam || email.labelIds.includes("SPAM")) {
+                spamCount++;
+                continue;
+              }
+
+              if (analysis.important) {
+                await GoogleService.labelEmail(user.id, email.id, labels.atencion);
+                alertsToSend.push({ email, analysis });
+              }
             }
 
-            // 3. Actualizar último ID procesado
-            await DBService.updateLastEmailId(user.id, newEmails[newEmails.length - 1].id);
+            if (spamCount > 0) {
+              console.log(`🧹 ${spamCount} correos de spam limpiados para ${user.id}.`);
+            }
+
+            if (alertsToSend.length > 0) {
+              const inHours = WorkerService.isWithinWorkingHours(profile.hl, profile.tz);
+
+              if (inHours && !context.awaiting) {
+                for (const alert of alertsToSend) {
+                  await MessageHandler.sendProactiveAlert(this.bot, user.id, alert.email, alert.analysis);
+                }
+              } else {
+                console.log(`⏰ Usuario ${user.id} fuera de horario o en chat. Posponiendo ${alertsToSend.length} alertas.`);
+                // En v1 guardado en memoria volatil/logs. v2: guardar en BD pending_alerts
+              }
+            }
           }
         } catch (err) {
           console.error(`❌ Error polleando correos para usuario ${user.id}:`, err);

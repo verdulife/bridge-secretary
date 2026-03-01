@@ -46,14 +46,14 @@ export class DBService {
   /**
    * Recupera los últimos N mensajes de un chat
    */
-  static async getChatHistory(chat_id: number, limit: number = 10): Promise<Message[]> {
+  static async getChatHistory(chat_id: number, limit: number = 20): Promise<Message[]> {
     try {
       const result = await client.execute({
-        sql: "SELECT role, content FROM messages WHERE chat_id = ? ORDER BY created_at ASC LIMIT ?",
+        sql: "SELECT role, content FROM messages WHERE chat_id = ? ORDER BY created_at DESC LIMIT ?",
         args: [chat_id, limit],
       });
 
-      return result.rows.map((row) => ({
+      return result.rows.reverse().map((row) => ({
         role: row.role as "user" | "assistant",
         content: row.content as string,
       }));
@@ -178,80 +178,88 @@ export class DBService {
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
       `);
-      // Añadir columna current_draft a users si no existe
-      try {
-        await client.execute("ALTER TABLE users ADD COLUMN current_draft TEXT");
-      } catch (e) { /* ignore if already exists */ }
 
-      // Limpieza de borradores viejos (más de 24h)
-      await client.execute("DELETE FROM pending_drafts WHERE created_at < datetime('now', '-1 day')");
+      try { await client.execute("ALTER TABLE users ADD COLUMN user_profile TEXT"); } catch (e) { /* ignore if already exists */ }
+      try { await client.execute("ALTER TABLE users ADD COLUMN current_context TEXT"); } catch (e) { /* ignore if already exists */ }
+
     } catch (error) {
       console.error("❌ Error inicializando DB:", error);
     }
   }
 
-  /**
-   * Guarda un borrador y devuelve su ID único corto.
-   */
-  static async saveDraft(chatId: number, payload: any): Promise<string> {
-    const id = Math.random().toString(36).substring(2, 10);
+  // --- MÉTODOS DE PERFIL Y CONTEXTO ---
+
+  static async getUserProfile(id: number): Promise<Record<string, any>> {
     try {
-      await client.execute({
-        sql: "INSERT INTO pending_drafts (id, chat_id, payload) VALUES (?, ?, ?)",
-        args: [id, chatId, JSON.stringify(payload)],
+      const result = await client.execute({
+        sql: "SELECT user_profile FROM users WHERE id = ?",
+        args: [id]
       });
-      return id;
+      const profileStr = result.rows[0]?.user_profile as string;
+      if (profileStr) return JSON.parse(profileStr);
     } catch (error) {
-      console.error("❌ Error en saveDraft:", error);
-      throw error;
+      console.error("❌ Error en getUserProfile:", error);
+    }
+    // Return default profile if none exists
+    return {
+      n: null,
+      tz: null,
+      hl: "09:00-18:00",
+      lang: null,
+      tone: null,
+      response_speed: null,
+      notification_sensitivity: null
+    };
+  }
+
+  static async updateUserProfile(id: number, fields: Record<string, any>): Promise<void> {
+    try {
+      const existing = await this.getUserProfile(id);
+      const merged = { ...existing, ...fields };
+      await client.execute({
+        sql: "UPDATE users SET user_profile = ? WHERE id = ?",
+        args: [JSON.stringify(merged), id]
+      });
+    } catch (error) {
+      console.error("❌ Error en updateUserProfile:", error);
     }
   }
 
-  /**
-   * Recupera un borrador por su ID.
-   */
-  static async getDraft(id: string): Promise<any | null> {
+  static async getCurrentContext(id: number): Promise<Record<string, any>> {
     try {
       const result = await client.execute({
-        sql: "SELECT payload FROM pending_drafts WHERE id = ?",
-        args: [id],
+        sql: "SELECT current_context FROM users WHERE id = ?",
+        args: [id]
       });
-      if (result.rows.length === 0) return null;
-      return JSON.parse(result.rows[0]?.payload as string);
+      const contextStr = result.rows[0]?.current_context as string;
+      if (contextStr) return JSON.parse(contextStr);
     } catch (error) {
-      console.error("❌ Error en getDraft:", error);
-      return null;
+      console.error("❌ Error en getCurrentContext:", error);
     }
+    // Return default context if none exists
+    return {
+      onboarding_step: "new",
+      pending_q: null,
+      last_topic: null,
+      last_active: null,
+      awaiting: null
+    };
   }
-  /**
-   * Actualiza el borrador activo de un usuario.
-   */
-  static async updateCurrentDraft(id: number, draft: any) {
+
+  static async updateCurrentContext(id: number, fields: Record<string, any>): Promise<void> {
     try {
+      const existing = await this.getCurrentContext(id);
+      const merged = { ...existing, ...fields };
       await client.execute({
-        sql: "UPDATE users SET current_draft = ? WHERE id = ?",
-        args: [JSON.stringify(draft), id],
+        sql: "UPDATE users SET current_context = ? WHERE id = ?",
+        args: [JSON.stringify(merged), id]
       });
     } catch (error) {
-      console.error("❌ Error en updateCurrentDraft:", error);
+      console.error("❌ Error en updateCurrentContext:", error);
     }
   }
 
-  /**
-   * Obtiene el borrador activo de un usuario.
-   */
-  static async getCurrentDraft(id: number): Promise<any | null> {
-    try {
-      const result = await client.execute({
-        sql: "SELECT current_draft FROM users WHERE id = ?",
-        args: [id],
-      });
-      return result.rows[0]?.current_draft ? JSON.parse(result.rows[0].current_draft as string) : null;
-    } catch (error) {
-      console.error("❌ Error en getCurrentDraft:", error);
-      return null;
-    }
-  }
+
 }
 
 // Inicializar al cargar el servicio

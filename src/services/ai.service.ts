@@ -9,7 +9,12 @@ export class AIService {
   /**
    * Envía el mensaje del usuario a Groq con el historial previo y devuelve la respuesta estructurada.
    */
-  static async analyzeMessage(text: string, history: { role: string; content: string }[] = []): Promise<any> {
+  static async analyzeMessage(
+    text: string,
+    history: { role: string; content: string }[] = [],
+    userProfile: Record<string, any> = {},
+    currentContext: Record<string, any> = {}
+  ): Promise<any> {
     try {
       const messages: any[] = [
         {
@@ -17,6 +22,10 @@ export class AIService {
           content: `Eres Bridge, un colega y secretario personal. 
           Habla de forma cercana, como un amigo (tutea). 
           Sé MUY conciso. Respuestas cortas y directas.
+
+          CONTEXTO OPERATIVO Y PERFIL DEL USUARIO:
+          - user_profile: ${JSON.stringify(userProfile)}
+          - current_context: ${JSON.stringify(currentContext)}
           
           DEBES RESPONDER EN FORMATO JSON:
           {
@@ -33,14 +42,7 @@ export class AIService {
           ACCIONES:
           - "list_recent_emails": Ver correos nuevos o un resumen general.
           - "search_emails": Buscar algo específico en los correos.
-          - "delete_email": Borrar un correo específico. Requiere "email_id".
-          - "draft_email": Redactar un correo nuevo. PARAMS: { "recipient_name": "Rup", "recipient_email": "rup@example.com", "topic": "asunto", "draft_content": "contenido_del_correo" }
-          - "reply_email": Responder a un mensaje. REQUIERE "email_id" del mensaje al que responde. PARAMS: { "draft_content": "Hola..." }
-          
-          REGLAS PARA ENVÍO/RESPUESTA:
-          1. Al redactar o responder, propón un borrador en "reply" y pide confirmación al usuario.
-          2. Si el remitente es un "no-reply" (ej: no-reply@...), ADVIERTE al usuario en el "reply" antes de intentar nada.
-          3. MEMORIA DE TRABAJO: Bridge guarda los borradores activos. Si el usuario da un email para completar un borrador, usa "draft_email" con "recipient_email". NO inventes contenido genérico.`
+          - "delete_email": Borrar un correo específico. Requiere "email_id" o "query". ¡NUNCA inventes el "email_id"! Si no lo sabes exactamente, envíalo vacío y usa "query" para buscarlo.`
         },
         ...history,
         {

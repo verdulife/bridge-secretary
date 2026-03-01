@@ -17,6 +17,59 @@ function escapeHTML(text: string): string {
 
 export class MessageHandler {
   /**
+   * Ejecuta el onboarding pasivo de Bridge. Bloqueante para flujos incompletos.
+   */
+  private static async checkOnboarding(userId: number, text: string, ctx: Context): Promise<boolean> {
+    const context = await DBService.getCurrentContext(userId);
+
+    if (context.onboarding_step === "new") {
+      await ctx.reply(`¡Hola! Soy Bridge, tu nuevo secretario personal. 🌉\n\nPara poder ayudarte mejor, me gustaría hacerte un par de preguntas rápidas.\n\nPrimero, ¿cómo prefieres que te llame?`, { parse_mode: "HTML" });
+      await DBService.updateCurrentContext(userId, { onboarding_step: "name" });
+      return true;
+    }
+
+    if (context.onboarding_step === "name") {
+      await DBService.updateUserProfile(userId, { n: text });
+      await ctx.reply(`Encantado, ${escapeHTML(text)}.\n\nPara no molestarte a deshora, ¿en qué país o región vives? Así sé cuándo es buen momento para avisarte de alertas importantes.`, { parse_mode: "HTML" });
+      await DBService.updateCurrentContext(userId, { onboarding_step: "tz" });
+      return true;
+    }
+
+    if (context.onboarding_step === "tz") {
+      await DBService.updateUserProfile(userId, { tz: text });
+      await ctx.reply(`Anotado.\n\nSuelo trabajar de 09:00 a 18:00 para no dar la lata fuera de horas de oficina. ¿Te parece bien o prefieres otro horario laboral? (Dime "así está bien" o dame tus horas).`, { parse_mode: "HTML" });
+      await DBService.updateCurrentContext(userId, { onboarding_step: "hl" });
+      return true;
+    }
+
+    if (context.onboarding_step === "hl") {
+      const isOk = text.toLowerCase().includes("bien") || text.toLowerCase().includes("vale") || text.toLowerCase().includes("ok");
+      if (!isOk) {
+        await DBService.updateUserProfile(userId, { hl: text });
+      }
+      await ctx.reply(`¡Perfecto! Ya estoy listo para empezar. 🎉\n\nPuedes vincular tus cuentas de Google y Notion escribiendo o pulsando el comando /conectar.`, { parse_mode: "HTML" });
+      await DBService.updateCurrentContext(userId, { onboarding_step: "complete" });
+      return true;
+    }
+
+    if (context.onboarding_step === "complete" && context.pending_q && context.pending_q.asked_at) {
+      const askedAt = new Date(context.pending_q.asked_at).getTime();
+      const now = Date.now();
+      if (now - askedAt > 24 * 60 * 60 * 1000) {
+        let questionText = "Oye, revisando mis notas veo que me dejé algo tintero hace días. ";
+        if (context.pending_q.field === "tz") questionText += "¿Me confirmas tu zona horaria para avisarte a las horas correctas?";
+        else if (context.pending_q.field === "hl") questionText += "¿Me confirmas tu horario de trabajo?";
+        else questionText += `¿Me confirmas tu ${context.pending_q.field}?`;
+
+        await ctx.reply(`<i>${questionText}</i>`, { parse_mode: "HTML" });
+        await DBService.updateCurrentContext(userId, { pending_q: { ...context.pending_q, asked_at: new Date().toISOString() } });
+      }
+    }
+
+    return false;
+  }
+
+  /**
    * Maneja mensajes de texto entrantes (Chatbot)
    */
   static async handleIncomingText(ctx: Context) {
@@ -29,10 +82,17 @@ export class MessageHandler {
     try {
       await ctx.sendChatAction("typing");
       await DBService.upsertUser(user.id, user.username, user.first_name);
-      await DBService.saveMessage(chatId, "user", userMessage);
-      const history = await DBService.getChatHistory(chatId, 10);
 
-      const aiResponse = await AIService.analyzeMessage(userMessage, history);
+      const handled = await MessageHandler.checkOnboarding(user.id, userMessage, ctx);
+      if (handled) return;
+
+      const userProfile = await DBService.getUserProfile(user.id);
+      const currentContext = await DBService.getCurrentContext(user.id);
+
+      await DBService.saveMessage(chatId, "user", userMessage);
+      const history = await DBService.getChatHistory(chatId, 20); // Limite de 20 en DBService, pero lo enviamos TODO a AIService
+
+      const aiResponse = await AIService.analyzeMessage(userMessage, history, userProfile, currentContext);
       const { reply, action, params } = aiResponse;
 
       console.log(`🤖 AI Action: ${action}`, params);
@@ -103,102 +163,18 @@ export class MessageHandler {
             throw error;
           }
         }
-      } else if (action === "draft_email") {
-        const { recipient_name, recipient_email, draft_content, topic } = params || {};
-        if (reply) await ctx.reply(reply, { parse_mode: "HTML" });
-
-        // Recuperamos el borrador actual para no perder el contexto (asunto/cuerpo) si la IA se vuelve perezosa
-        let currentDraft = (await DBService.getCurrentDraft(user.id)) || {};
-
-        // Actualizamos con lo que nos pase la IA ahora (si trae algo nuevo)
-        if (draft_content) currentDraft.body = draft_content;
-        if (topic) currentDraft.subject = topic;
-        if (recipient_email) currentDraft.to = recipient_email;
-
-        await DBService.updateCurrentDraft(user.id, currentDraft);
-
-        // Si ya tenemos el email (vía params o vía DB)
-        const finalEmail = recipient_email || currentDraft.to;
-        if (finalEmail) {
-          const draftId = await DBService.saveDraft(chatId, {
-            to: finalEmail,
-            body: currentDraft.body || draft_content,
-            subject: currentDraft.subject || topic || "Sin asunto"
-          });
-          await ctx.reply(`Vale, tengo el destinatario: <b>${finalEmail}</b>.\n¿Se lo envío ahora?`, {
-            parse_mode: "HTML",
-            ...Markup.inlineKeyboard([
-              [Markup.button.callback("✅ Enviar ahora", `send_dr:${draftId}`)],
-              [Markup.button.callback("❌ Cancelar", "cancel_send")]
-            ])
-          });
-          return;
-        }
-
-        const contacts = await GoogleService.searchContacts(user.id, recipient_name || "");
-
-        if (contacts.length === 0) {
-          await ctx.reply(`No he encontrado a nadie llamado "${recipient_name}". ¿Me das su email a mano o pruebo con otro nombre?`);
-        } else if (contacts.length === 1) {
-          const c = contacts[0]!;
-          const draftId = await DBService.saveDraft(chatId, {
-            to: c.email,
-            body: currentDraft.body || draft_content,
-            subject: currentDraft.subject || topic || "Sin asunto"
-          });
-          await ctx.reply(`He encontrado a <b>${escapeHTML(c.name)}</b> (${c.email}).\n¿Se lo envío?`, {
-            parse_mode: "HTML",
-            ...Markup.inlineKeyboard([
-              [Markup.button.callback("✅ Enviar ahora", `send_dr:${draftId}`)],
-              [Markup.button.callback("❌ Cancelar", "cancel_send")]
-            ])
-          });
-        } else {
-          const draftItems = await Promise.all(contacts.slice(0, 5).map(async (c: any) => {
-            const id = await DBService.saveDraft(chatId, {
-              to: c.email,
-              body: currentDraft.body || draft_content,
-              subject: currentDraft.subject || topic || "Sin asunto"
-            });
-            return { name: c.name, email: c.email, id };
-          }));
-
-          const buttons = draftItems.map(item => [
-            Markup.button.callback(`👤 ${item.name} (${item.email})`, `prep_dr:${item.id}`)
-          ]);
-          await ctx.reply("He encontrado varios contactos. ¿A cuál de estos se lo mando?", Markup.inlineKeyboard(buttons));
-        }
-      } else if (action === "reply_email" && params?.email_id) {
-        if (reply) await ctx.reply(reply, { parse_mode: "HTML" });
-
-        // Buscamos el correo original para tener el hilo y el destinatario
-        const emails = await GoogleService.searchEmails(user.id, params.email_id, "global");
-        const original = emails.find(e => e.id === params.email_id);
-
-        if (!original) {
-          await ctx.reply("No encuentro el correo original para responder. ¿Podemos listar los correos otra vez?");
-          return;
-        }
-
-        const isNoReply = original.from.toLowerCase().includes("no-reply") || original.from.toLowerCase().includes("noreply");
-        if (isNoReply) {
-          await ctx.reply("⚠️ <b>Ojo:</b> Este correo viene de una dirección 'no-reply'. Si respondo, probablemente nadie lea tu mensaje. ¿Quieres que lo intente de todas formas?", { parse_mode: "HTML" });
-        }
-
-        const draftId = await DBService.saveDraft(chatId, { threadId: original.id, to: original.from, body: params.draft_content, subject: original.subject });
-        await ctx.reply(`¿Respondo a <b>${escapeHTML(original.from)}</b> con este texto?`, {
-          parse_mode: "HTML",
-          ...Markup.inlineKeyboard([
-            [Markup.button.callback("✅ Responder", `repl_dr:${draftId}`)],
-            [Markup.button.callback("❌ Cancelar", "cancel_send")]
-          ])
-        });
       } else if (action === "delete_email") {
         const { email_id, query } = params || {};
 
         if (reply) await ctx.reply(reply, { parse_mode: "HTML" });
 
         let targetId = email_id;
+
+        // Validamos que de verdad parezca un ID de Gmail (típicamente 16 caracteres hex) y no una alucinación ("id_del_email")
+        if (targetId && !/^[0-9a-fA-F]{15,20}$/.test(targetId)) {
+          console.warn(`⚠️ ID inventado por la IA detectado: ${targetId}. Cayendo a búsqueda por query...`);
+          targetId = null;
+        }
 
         // Si no tenemos ID pero sí búsqueda, intentamos encontrarlo
         if (!targetId && query) {
@@ -298,54 +274,6 @@ export class MessageHandler {
       } else {
         await ctx.reply("Vaya, no he podido borrarlo. Inténtalo tú en Gmail.");
       }
-    } else if (data.startsWith("send_dr:") || data.startsWith("repl_dr:")) {
-      const isReply = data.startsWith("repl_dr:");
-      const draftId = data.split(":")[1] || "";
-      const draft = await DBService.getDraft(draftId);
-
-      if (!draft) {
-        await ctx.reply("Vaya, no encuentro este borrador. ¿Podemos intentarlo de nuevo?");
-        return;
-      }
-
-      const { to, subject, body, threadId } = draft;
-      await ctx.answerCbQuery(isReply ? "Respondiendo..." : "Enviando...");
-
-      let success = false;
-      if (isReply && threadId) {
-        success = await GoogleService.replyEmail(userId, threadId, threadId, to, subject, body);
-      } else {
-        success = await GoogleService.sendEmail(userId, to, subject, body);
-      }
-
-      if (success) {
-        await DBService.updateCurrentDraft(userId, null);
-        await ctx.editMessageText(isReply ? "✅ Respuesta enviada." : "✅ Correo enviado correctamente.");
-      } else {
-        await ctx.reply("Vaya, no he podido enviar el correo. ¿Lo intentas tú en Gmail?");
-      }
-    } else if (data.startsWith("prep_dr:")) {
-      const draftId = data.split(":")[1] || "";
-      const draft = await DBService.getDraft(draftId);
-
-      if (!draft) {
-        await ctx.reply("Borrador no encontrado.");
-        return;
-      }
-
-      const { to, body } = draft;
-      await ctx.answerCbQuery("Preparado.");
-      await ctx.editMessageText(`¿Se lo envío a <b>${escapeHTML(to || "")}</b>?\n\n<i>Texto: ${escapeHTML((body || "").substring(0, 100))}...</i>`, {
-        parse_mode: "HTML",
-        ...Markup.inlineKeyboard([
-          [Markup.button.callback("✅ Confirmar Envío", `send_dr:${draftId}`)],
-          [Markup.button.callback("❌ Cancelar", "cancel_send")]
-        ])
-      });
-    } else if (data === "cancel_send") {
-      await DBService.updateCurrentDraft(userId, null);
-      await ctx.answerCbQuery("Cancelado.");
-      await ctx.editMessageText("Vale, envío cancelado.");
     }
   }
 }
