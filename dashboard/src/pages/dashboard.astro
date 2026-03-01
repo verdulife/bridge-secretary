@@ -217,7 +217,19 @@ const googleConnected = !!user.google_token;
                 <div class="service-item">
                     <div>
                         <div style="font-weight: 600;">Gmail</div>
-                        <div style="font-size: 0.8rem; color: #94a3b8;">Lectura y envío de correos</div>
+                        <div style="font-size: 0.8rem; color: #94a3b8;">Lectura y resumen de correos</div>
+                    </div>
+                    {googleConnected ? (
+                        <span class="status-tag status-connected">Conectado</span>
+                    ) : (
+                        <a href={`/api/auth/google?chatId=${chatId}`} class="btn btn-secondary">Conectar</a>
+                    )}
+                </div>
+
+                <div class="service-item">
+                    <div>
+                        <div style="font-weight: 600;">Google Calendar</div>
+                        <div style="font-size: 0.8rem; color: #94a3b8;">Gestión de agenda y eventos</div>
                     </div>
                     {googleConnected ? (
                         <span class="status-tag status-connected">Conectado</span>

@@ -1,7 +1,11 @@
 import { bot } from "@/bot";
-import type { Update } from "telegraf/types"; // Importamos el tipo específico
+import { WorkerService } from "@/services/worker.service";
+import type { Update } from "telegraf/types";
 
 const PORT = 8520;
+
+// Iniciar el vigilante de correos
+WorkerService.start(bot);
 
 const server = Bun.serve({
   port: PORT,
@@ -11,7 +15,6 @@ const server = Bun.serve({
 
     if (url.pathname === "/webhook" && req.method === "POST") {
       try {
-        // Casteamos el body a Update para que el linter esté contento
         const body = (await req.json()) as Update;
         console.log("📩 Webhook recibido");
         await bot.handleUpdate(body);

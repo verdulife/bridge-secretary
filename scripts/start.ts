@@ -32,8 +32,10 @@ console.log(`✅ Servidor escuchando en http://localhost:${PORT}`);
 // ── 2. Arranca el túnel y captura la URL ─────────────────────────────────────
 console.log("🌐 Levantando túnel de Cloudflare...");
 
+const CLOUDFLARED_PATH = Bun.env.CLOUDFLARED_PATH || "cloudflared";
+
 const tunnelUrl = await new Promise<string>((resolve, reject) => {
-  const tunnel = Bun.spawn(["cloudflared", "tunnel", "--protocol", "http2", "--url", `http://localhost:${PORT}`], {
+  const tunnel = Bun.spawn([CLOUDFLARED_PATH, "tunnel", "--protocol", "http2", "--url", `http://localhost:${PORT}`], {
     stdout: "pipe",
     stderr: "pipe",
     env: { ...process.env },

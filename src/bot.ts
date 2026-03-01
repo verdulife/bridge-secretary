@@ -16,7 +16,7 @@ bot.start((ctx) =>
   )
 );
 
-// Comando para vincular cuentas con botón premium
+// Comando para vincular cuentas
 bot.command("conectar", (ctx) => {
   const chatId = ctx.chat.id;
   const dashboardUrl = `https://bridge-dashboard-six.vercel.app/dashboard?chatId=${chatId}`;
@@ -31,3 +31,6 @@ bot.command("conectar", (ctx) => {
 
 // Delegamos todos los mensajes de texto a nuestro handler
 bot.on("text", MessageHandler.handleIncomingText);
+
+// Manejo de botones (callback queries)
+bot.on("callback_query", MessageHandler.handleCallback);

@@ -11,7 +11,9 @@ export const GET: APIRoute = async ({ url, redirect }) => {
 
   const clientId = import.meta.env.GOOGLE_CLIENT_ID;
   const clientSecret = import.meta.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri = `https://${url.host}/api/auth/callback/google`;
+  const isLocal = url.host.includes('localhost:4321');
+  const baseUrl = isLocal ? `http://localhost:4321` : `https://bridge-dashboard-six.vercel.app`;
+  const redirectUri = `${baseUrl}/api/auth/callback/google`;
 
   try {
     // Exchange code for access token

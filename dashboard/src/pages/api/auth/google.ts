@@ -5,12 +5,19 @@ export const GET: APIRoute = async ({ url, redirect }) => {
   if (!chatId) return new Response('Missing chatId', { status: 400 });
 
   const clientId = import.meta.env.GOOGLE_CLIENT_ID;
-  const redirectUri = `https://${url.host}/api/auth/callback/google`;
+  const isLocal = url.host.includes('localhost:4321');
+  const baseUrl = isLocal ? `http://localhost:4321` : `https://bridge-dashboard-six.vercel.app`;
+  const redirectUri = `${baseUrl}/api/auth/callback/google`;
 
-  // Google OAuth Scopes (Gmail read/send)
+  // Google OAuth Scopes (Synchronized with Cloud Console)
   const scopes = [
     'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.modify',
     'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/gmail.compose',
+    'https://www.googleapis.com/auth/gmail.labels',
+    'https://www.googleapis.com/auth/calendar',
+    'https://www.googleapis.com/auth/contacts.readonly',
     'https://www.googleapis.com/auth/userinfo.profile'
   ].join(' ');
 
