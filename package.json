@@ -3,15 +3,9 @@
   "module": "src/index.ts",
   "type": "module",
   "private": true,
-  "scripts": {
-    "start": "bun scripts/start.ts",
-    "dev": "bun --watch src/index.ts",
-    "tunnel": "cloudflared tunnel --url http://localhost:8520",
-    "bridge": "concurrently \"bun tunnel\" \"bun dev\""
-  },
   "devDependencies": {
-    "@types/bun": "^1.3.9",
-    "concurrently": "^9.2.1"
+    "@types/bun": "latest",
+    "@types/node": "^25.4.0"
   },
   "peerDependencies": {
     "typescript": "^5"

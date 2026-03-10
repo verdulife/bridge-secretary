@@ -1,10 +1,6 @@
 {
   "compilerOptions": {
     // Environment setup & latest features
-    "paths": {
-      "@/*": ["./src/*"]
-    },
-    "types": ["bun-types"],
     "lib": ["ESNext"],
     "target": "ESNext",
     "module": "Preserve",
@@ -17,6 +13,12 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
+
+    // Path aliases
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
 
     // Best practices
     "strict": true,
