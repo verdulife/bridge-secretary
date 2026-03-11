@@ -1,0 +1,34 @@
+---
+import Layout from "@/layouts/Layout.astro";
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const password = form.get("password");
+
+  if (password === import.meta.env.ADMIN_PASSWORD) {
+    Astro.cookies.set("session", import.meta.env.ADMIN_PASSWORD, {
+      httpOnly: true,
+      path: "/",
+    });
+    return Astro.redirect("/dashboard");
+  }
+}
+---
+
+<Layout>
+  <form method="POST" class="flex flex-col gap-4 w-full max-w-sm">
+    <h1 class="text-white text-2xl font-bold text-center">Bridge Admin</h1>
+    <input
+      type="password"
+      name="password"
+      placeholder="Contraseña"
+      class="px-4 py-2 rounded bg-gray-800 text-white border border-gray-700 focus:outline-none"
+    />
+    <button
+      type="submit"
+      class="px-4 py-2 bg-white text-gray-950 rounded font-semibold hover:bg-gray-200"
+    >
+      Entrar
+    </button>
+  </form>
+</Layout>

@@ -1,0 +1,24 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import UserTable from "@/components/UserTable.svelte";
+import { client } from "@/lib/db";
+
+const result = await client.execute(
+  "SELECT id, username, first_name, status, created_at FROM users ORDER BY created_at DESC",
+);
+
+const users = result.rows.map((row) => ({
+  id: row.id as number,
+  username: row.username as string | null,
+  first_name: row.first_name as string | null,
+  status: row.status as string,
+  created_at: row.created_at as string,
+}));
+---
+
+<Layout>
+  <div class="w-full max-w-4xl">
+    <h1 class="text-2xl font-bold mb-6">Usuarios</h1>
+    <UserTable {users} client:load />
+  </div>
+</Layout>
