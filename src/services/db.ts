@@ -39,3 +39,24 @@ export async function createUser(id: number, username: string | null, first_name
     args: [id, username, first_name],
   });
 }
+
+export async function validateAndUseKey(key: string, userId: number): Promise<boolean> {
+  const result = await client.execute({
+    sql: "SELECT * FROM invite_keys WHERE key = ? AND used_by IS NULL",
+    args: [key],
+  });
+
+  if (result.rows.length === 0) return false;
+
+  await client.execute({
+    sql: "UPDATE invite_keys SET used_by = ?, used_at = CURRENT_TIMESTAMP WHERE key = ?",
+    args: [userId, key],
+  });
+
+  await client.execute({
+    sql: "INSERT INTO users (id, status) VALUES (?, 'beta') ON CONFLICT(id) DO UPDATE SET status = 'beta'",
+    args: [userId],
+  });
+
+  return true;
+}

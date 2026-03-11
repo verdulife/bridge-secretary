@@ -10,4 +10,5 @@ export const bot = new Telegraf(Bun.env.TELEGRAM_TOKEN);
 
 bot.command("acceso", handleAcceso);
 bot.command("soporte", handleSoporte);
+
 bot.on("text", handleMessage);

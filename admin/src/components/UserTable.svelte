@@ -6,6 +6,22 @@
     status: string;
     created_at: string;
   }[];
+
+  async function updateStatus(id: number, action: "activate" | "block") {
+    const res = await fetch("/api/users/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, action }),
+    });
+
+    const data = await res.json();
+
+    if (data.ok) {
+      users = users.map((u) =>
+        u.id === id ? { ...u, status: data.status } : u,
+      );
+    }
+  }
 </script>
 
 <div class="rounded-lg border border-zinc-800 overflow-hidden">
@@ -16,7 +32,7 @@
         <th class="px-4 py-3 text-left">ID</th>
         <th class="px-4 py-3 text-left">Status</th>
         <th class="px-4 py-3 text-left">Registro</th>
-        <th class="px-4 py-3 text-left">Acciones</th>
+        <th class="px-4 py-3 text-left">Acción</th>
       </tr>
     </thead>
     <tbody>
@@ -30,9 +46,7 @@
               @{user.username ?? "sin username"}
             </div>
           </td>
-
           <td class="px-4 py-3 text-zinc-400 font-mono text-xs">{user.id}</td>
-
           <td class="px-4 py-3">
             <span
               class="px-2 py-1 rounded-full text-xs font-medium
@@ -47,31 +61,25 @@
               {user.status}
             </span>
           </td>
-
           <td class="px-4 py-3 text-zinc-400 text-xs">
             {new Date(user.created_at).toLocaleDateString("es-ES")}
           </td>
-
           <td class="px-4 py-3">
-            <select
-              class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200"
-              value={user.status}
-              on:change={async (e) => {
-                await fetch("/api/users/status", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    id: user.id,
-                    status: e.currentTarget.value,
-                  }),
-                });
-              }}
-            >
-              <option value="waitlist">waitlist</option>
-              <option value="beta">beta</option>
-              <option value="active">active</option>
-              <option value="blocked">blocked</option>
-            </select>
+            {#if user.status === "waitlist" || user.status === "blocked"}
+              <button
+                on:click={() => updateStatus(user.id, "activate")}
+                class="px-3 py-1 bg-green-900 text-green-300 rounded text-xs font-medium hover:bg-green-800 transition-colors"
+              >
+                Activar
+              </button>
+            {:else if user.status === "beta" || user.status === "active"}
+              <button
+                on:click={() => updateStatus(user.id, "block")}
+                class="px-3 py-1 bg-red-900 text-red-300 rounded text-xs font-medium hover:bg-red-800 transition-colors"
+              >
+                Bloquear
+              </button>
+            {/if}
           </td>
         </tr>
       {/each}
