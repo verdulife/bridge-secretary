@@ -13,7 +13,10 @@ export function init() {
   tg.expand();
 }
 
+const isDev = import.meta.env.DEV;
+
 export function getInitData(): string {
+  if (isDev) return "dev";
   return tg.initData;
 }
 

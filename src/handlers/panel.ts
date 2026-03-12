@@ -65,5 +65,21 @@ export async function handlePanel(req: Request): Promise<Response> {
     return Response.json({ ok: true });
   }
 
+  // GET /panel/integrations
+  if (path === "/panel/integrations" && req.method === "GET") {
+    const result = await client.execute({
+      sql: "SELECT google_token FROM users WHERE id = ?",
+      args: [userId],
+    });
+
+    const user = result.rows[0];
+    return Response.json({
+      gmail: !!user?.google_token,
+      calendar: false,
+      notion: false,
+    });
+  }
+
   return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
 }
+

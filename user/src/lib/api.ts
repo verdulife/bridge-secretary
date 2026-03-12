@@ -37,3 +37,11 @@ export function getUsage() {
 export function deleteAccount() {
   return request("/panel/account", { method: "DELETE" });
 }
+
+export function getIntegrations() {
+  return request<{ gmail: boolean; calendar: boolean; notion: boolean }>("/panel/integrations");
+}
+
+export function getOAuthUrl(service: "gmail") {
+  return `${BASE_URL}/auth/${service}?initData=${encodeURIComponent(getInitData())}`;
+}
