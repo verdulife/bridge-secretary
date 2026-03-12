@@ -136,3 +136,16 @@ export async function addMessage(id: number, role: "user" | "assistant", content
     args: [id, JSON.stringify(messages), JSON.stringify(messages)],
   });
 }
+
+export async function trackUsage(
+  userId: number,
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  task: string
+): Promise<void> {
+  await client.execute({
+    sql: "INSERT INTO usage (user_id, model, input_tokens, output_tokens, task) VALUES (?, ?, ?, ?, ?)",
+    args: [userId, model, inputTokens, outputTokens, task],
+  });
+}

@@ -41,13 +41,13 @@ export async function handleMessage(ctx: Context) {
   await addMessage(user.id, "user", text);
 
   // Llamada a Groq
-  const reply = await chat(text, history, soul, profile, context);
+  const reply = await chat(user.id, text, history, soul, profile, context);
 
   // Guardar respuesta
   await addMessage(user.id, "assistant", reply);
 
   // Inferir cambios en soul o perfil
-  const updates = await inferProfile(text, soul, profile);
+  const updates = await inferProfile(user.id, text, soul, profile);
   if (updates.soul && Object.keys(updates.soul).length > 0) await updateSoul(user.id, updates.soul);
   if (updates.profile && Object.keys(updates.profile).length > 0) await updateUserProfile(user.id, updates.profile);
 
@@ -74,7 +74,7 @@ async function handleOnboarding(ctx: Context, userId: number, text: string, soul
   }
 
   if (step === "tz") {
-    const tz = await normalizeTimezone(text);
+    const tz = await normalizeTimezone(userId, text);
     await updateUserProfile(userId, { tz, _confirmed: ["tz"] });
     await ctx.reply(`Anotado.\n\nMi horario por defecto es de 09:00 a 18:00. ¿Te parece bien o prefieres otro horario?`);
     await updateCurrentContext(userId, { onboarding_step: "hl" });
@@ -82,7 +82,7 @@ async function handleOnboarding(ctx: Context, userId: number, text: string, soul
   }
 
   if (step === "hl") {
-    const intent = await interpretIntent(text, ["confirm", "custom"]);
+    const intent = await interpretIntent(userId, text, ["confirm", "custom"]);
     if (intent === "custom") {
       await updateUserProfile(userId, { hl: text, _confirmed: ["tz", "hl"] });
     } else {

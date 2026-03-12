@@ -1,5 +1,6 @@
 import Groq from "groq-sdk";
 import { BASE_PROMPT } from "@/prompts/base";
+import { trackUsage } from "@/services/db";
 
 const groq = new Groq({ apiKey: Bun.env.GROQ_API_KEY });
 
@@ -20,6 +21,7 @@ IMPORTANTE: El campo datetime del SYSTEM es la fecha y hora REAL y ACTUAL del us
 }
 
 export async function chat(
+  userId: number,
   message: string,
   history: { role: string; content: string }[],
   soul: Record<string, any>,
@@ -39,10 +41,21 @@ export async function chat(
     ]
   });
 
+  await trackUsage(
+    userId,
+    MODEL_LARGE,
+    response.usage?.prompt_tokens ?? 0,
+    response.usage?.completion_tokens ?? 0,
+    "chat"
+  );
+
   return response.choices[0]?.message.content ?? "No he podido procesar tu mensaje.";
 }
 
-export async function classifyEmail(email: { from: string; subject: string; snippet: string }): Promise<{ summary: string; important: boolean; is_spam: boolean }> {
+export async function classifyEmail(
+  userId: number,
+  email: { from: string; subject: string; snippet: string }
+): Promise<{ summary: string; important: boolean; is_spam: boolean }> {
   const response = await groq.chat.completions.create({
     model: MODEL_SMALL,
     temperature: 0.1,
@@ -60,6 +73,14 @@ export async function classifyEmail(email: { from: string; subject: string; snip
     ]
   });
 
+  await trackUsage(
+    userId,
+    MODEL_SMALL,
+    response.usage?.prompt_tokens ?? 0,
+    response.usage?.completion_tokens ?? 0,
+    "classify_email"
+  );
+
   try {
     return JSON.parse(response.choices[0]?.message.content ?? "{}");
   } catch {
@@ -67,7 +88,10 @@ export async function classifyEmail(email: { from: string; subject: string; snip
   }
 }
 
-export async function summarizeEmails(emails: { from: string; subject: string; snippet: string }[]): Promise<string> {
+export async function summarizeEmails(
+  userId: number,
+  emails: { from: string; subject: string; snippet: string }[]
+): Promise<string> {
   const emailList = emails.map((e, i) => `${i + 1}. De: ${e.from} | Asunto: ${e.subject} | ${e.snippet}`).join("\n");
 
   const response = await groq.chat.completions.create({
@@ -76,17 +100,26 @@ export async function summarizeEmails(emails: { from: string; subject: string; s
     messages: [
       {
         role: "system",
-        content: `Resume estos correos de forma concisa y cercana. Agrupa los similares. 
+        content: `Resume estos correos de forma concisa y cercana. Agrupa los similares.
 PROHIBIDO Markdown. Usa solo HTML si necesitas formato.`
       },
       { role: "user", content: emailList }
     ]
   });
 
+  await trackUsage(
+    userId,
+    MODEL_LARGE,
+    response.usage?.prompt_tokens ?? 0,
+    response.usage?.completion_tokens ?? 0,
+    "summarize_emails"
+  );
+
   return response.choices[0]?.message.content ?? "No he podido resumir los correos.";
 }
 
 export async function inferProfile(
+  userId: number,
   message: string,
   soul: Record<string, any>,
   profile: Record<string, any>
@@ -115,6 +148,14 @@ Responde SOLO en JSON: {"soul":{},"profile":{}}`
     ]
   });
 
+  await trackUsage(
+    userId,
+    MODEL_SMALL,
+    response.usage?.prompt_tokens ?? 0,
+    response.usage?.completion_tokens ?? 0,
+    "infer_profile"
+  );
+
   try {
     return JSON.parse(response.choices[0]?.message.content ?? "{}");
   } catch {
@@ -123,6 +164,7 @@ Responde SOLO en JSON: {"soul":{},"profile":{}}`
 }
 
 export async function interpretIntent(
+  userId: number,
   message: string,
   options: string[]
 ): Promise<string> {
@@ -140,6 +182,14 @@ Responde SOLO en JSON: {"intent":"opcion"}`
     ]
   });
 
+  await trackUsage(
+    userId,
+    MODEL_SMALL,
+    response.usage?.prompt_tokens ?? 0,
+    response.usage?.completion_tokens ?? 0,
+    "interpret_intent"
+  );
+
   try {
     const result = JSON.parse(response.choices[0]?.message.content ?? "{}");
     return result.intent ?? options[0];
@@ -148,7 +198,10 @@ Responde SOLO en JSON: {"intent":"opcion"}`
   }
 }
 
-export async function normalizeTimezone(input: string): Promise<string> {
+export async function normalizeTimezone(
+  userId: number,
+  input: string
+): Promise<string> {
   const response = await groq.chat.completions.create({
     model: MODEL_SMALL,
     temperature: 0,
@@ -162,6 +215,14 @@ Responde SOLO en JSON: {"tz":"zona_iana"}`
       { role: "user", content: input }
     ]
   });
+
+  await trackUsage(
+    userId,
+    MODEL_SMALL,
+    response.usage?.prompt_tokens ?? 0,
+    response.usage?.completion_tokens ?? 0,
+    "normalize_tz"
+  );
 
   try {
     const result = JSON.parse(response.choices[0]?.message.content ?? "{}");
