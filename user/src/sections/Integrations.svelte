@@ -18,9 +18,19 @@
     }
   }
 
-  function connect(service: "gmail") {
+  async function connect(service: "gmail") {
     haptic("light");
-    tg.openLink(getOAuthUrl(service));
+    try {
+      const { url } = await getOAuthUrl();
+      // En desarrollo abre en la misma ventana
+      if (import.meta.env.DEV) {
+        window.location.href = url;
+      } else {
+        tg.openLink(url);
+      }
+    } catch {
+      toast.show("Error al obtener la URL de conexión", "error");
+    }
   }
 
   onMount(() => {

@@ -1,7 +1,8 @@
 import { bot } from "@/bot";
 import { handlePanel } from "@/handlers/panel";
+import { handleAuth } from "@/handlers/auth";
 
-const PORT = 8520;
+const PORT = Number(Bun.env.PORT);
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -28,6 +29,12 @@ export async function startServer() {
 
       if (url.pathname === "/webhook") {
         return bot.handleUpdate(await req.json()).then(() => new Response("ok"));
+      }
+
+      if (url.pathname.startsWith("/auth")) {
+        const res = await handleAuth(req);
+        Object.entries(CORS_HEADERS).forEach(([k, v]) => res.headers.set(k, v));
+        return res;
       }
 
       return new Response("Bridge is running", { status: 200 });

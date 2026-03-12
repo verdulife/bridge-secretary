@@ -1,7 +1,7 @@
 import localtunnel from "localtunnel";
 
 const TELEGRAM_TOKEN = Bun.env.TELEGRAM_TOKEN;
-const PORT = 8520;
+const PORT = Number(Bun.env.PORT);
 
 if (!TELEGRAM_TOKEN) {
   console.error("❌ TELEGRAM_TOKEN no definido en .env");
@@ -23,12 +23,12 @@ tunnel.on("close", () => {
 });
 
 // 2. Inyecta la URL y registra el webhook
-process.env.WEBHOOK_URL = tunnel.url;
+process.env.BASE_URL = tunnel.url;
 
 const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ url: `${tunnel.url}/webhook` }),
+  body: JSON.stringify({ url: `${process.env.BASE_URL}/webhook` }),
 });
 
 const result = await res.json() as { ok: boolean; description?: string };
