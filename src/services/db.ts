@@ -1,6 +1,6 @@
 import { createClient } from "@libsql/client";
 
-const client = createClient({
+export const client = createClient({
   url: Bun.env.TURSO_URL!,
   authToken: Bun.env.TURSO_AUTH_TOKEN!,
 });

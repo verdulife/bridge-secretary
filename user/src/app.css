@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+:root {
+  --bg: var(--tg-theme-bg-color, #ffffff);
+  --bg-secondary: var(--tg-theme-secondary-bg-color, #f4f4f5);
+  --text: var(--tg-theme-text-color, #000000);
+  --hint: var(--tg-theme-hint-color, #71717a);
+  --link: var(--tg-theme-link-color, #3b82f6);
+  --button: var(--tg-theme-button-color, #3b82f6);
+  --button-text: var(--tg-theme-button-text-color, #ffffff);
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}

@@ -32,7 +32,6 @@ bun-debug.log*
 
 # Editor
 .vscode/
-.idea/
 
 # Temporales
 *.tmp
@@ -42,3 +41,11 @@ bun-debug.log*
 admin/node_modules/
 admin/.astro/
 admin/dist/
+admin/.vscode/
+admin/.vercel/
+
+# User miniapp
+user/node_modules
+user/dist
+user/.vscode/
+user/.vercel/
