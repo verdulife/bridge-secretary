@@ -7,7 +7,7 @@ const PORT = Number(Bun.env.PORT);
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, x-init-data",
+  "Access-Control-Allow-Headers": "Content-Type, x-init-data, bypass-tunnel-reminder",
 };
 
 export async function startServer() {

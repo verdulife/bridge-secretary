@@ -3,7 +3,7 @@ import { google } from "googleapis";
 const CLIENT_ID = Bun.env.GOOGLE_CLIENT_ID!;
 const CLIENT_SECRET = Bun.env.GOOGLE_CLIENT_SECRET!;
 const REDIRECT_URI = Bun.env.NODE_ENV === "development"
-  ? "http://localhost:8520/auth/gmail/callback"
+  ? "https://bridge-bot.loca.lt/auth/gmail/callback"
   : `${Bun.env.BASE_URL}/auth/gmail/callback`;
 
 export function createOAuthClient() {

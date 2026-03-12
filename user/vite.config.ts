@@ -5,4 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [svelte(), tailwindcss()],
   base: './',
+  server: {
+    allowedHosts: ['bridge-panel.loca.lt'],
+  },
 })

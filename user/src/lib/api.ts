@@ -8,6 +8,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers: {
       "Content-Type": "application/json",
       "x-init-data": getInitData(),
+      "bypass-tunnel-reminder": "true",
       ...options.headers,
     },
   });
