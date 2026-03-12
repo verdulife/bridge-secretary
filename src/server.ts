@@ -1,6 +1,6 @@
 import { bot } from "@/bot";
 
-const PORT = 8521;
+const PORT = 8520;
 
 export async function startServer() {
   Bun.serve({
