@@ -49,25 +49,6 @@ export async function getSoul(id: number): Promise<Record<string, any>> {
   return soul ? JSON.parse(soul) : { name: "Bridge", tone: null, style: null };
 }
 
-export async function updateSoul(id: number, fields: Record<string, any>): Promise<void> {
-  const existing = await getSoul(id);
-  const confirmed = existing._confirmed ?? [];
-
-  const safeFields = Object.fromEntries(
-    Object.entries(fields).filter(([key]) => !confirmed.includes(key) || key === "_confirmed")
-  );
-
-  const merged = { ...existing, ...safeFields };
-  if (fields._confirmed) {
-    merged._confirmed = [...new Set([...confirmed, ...fields._confirmed])];
-  }
-
-  await client.execute({
-    sql: "UPDATE users SET soul = ? WHERE id = ?",
-    args: [JSON.stringify(merged), id],
-  });
-}
-
 export async function getUserProfile(id: number): Promise<Record<string, any>> {
   const result = await client.execute({
     sql: "SELECT user_profile FROM users WHERE id = ?",
@@ -77,19 +58,26 @@ export async function getUserProfile(id: number): Promise<Record<string, any>> {
   return profile ? JSON.parse(profile) : { n: null, tz: null, hl: "09:00-18:00", lang: null, response_speed: null, notification_sensitivity: null };
 }
 
-export async function updateUserProfile(id: number, fields: Record<string, any>): Promise<void> {
-  const existing = await getUserProfile(id);
+export async function updateSoul(id: number, fields: Record<string, any>): Promise<void> {
+  const existing = await getSoul(id);
   const confirmed = existing._confirmed ?? [];
-
-  const safeFields = Object.fromEntries(
-    Object.entries(fields).filter(([key]) => !confirmed.includes(key) || key === "_confirmed")
-  );
-
-  const merged = { ...existing, ...safeFields };
+  const merged = { ...existing, ...fields };
   if (fields._confirmed) {
     merged._confirmed = [...new Set([...confirmed, ...fields._confirmed])];
   }
+  await client.execute({
+    sql: "UPDATE users SET soul = ? WHERE id = ?",
+    args: [JSON.stringify(merged), id],
+  });
+}
 
+export async function updateUserProfile(id: number, fields: Record<string, any>): Promise<void> {
+  const existing = await getUserProfile(id);
+  const confirmed = existing._confirmed ?? [];
+  const merged = { ...existing, ...fields };
+  if (fields._confirmed) {
+    merged._confirmed = [...new Set([...confirmed, ...fields._confirmed])];
+  }
   await client.execute({
     sql: "UPDATE users SET user_profile = ? WHERE id = ?",
     args: [JSON.stringify(merged), id],
@@ -147,5 +135,75 @@ export async function trackUsage(
   await client.execute({
     sql: "INSERT INTO usage (user_id, model, input_tokens, output_tokens, task) VALUES (?, ?, ?, ?, ?)",
     args: [userId, model, inputTokens, outputTokens, task],
+  });
+}
+
+export async function enqueue(entry: {
+  user_id?: number;
+  type: "alert" | "internal";
+  payload: Record<string, any>;
+  action?: Record<string, any>;
+  scheduled_at?: Date;
+}): Promise<void> {
+  await client.execute({
+    sql: `INSERT INTO queue (user_id, type, payload, action, scheduled_at)
+          VALUES (?, ?, ?, ?, ?)`,
+    args: [
+      entry.user_id ?? null,
+      entry.type,
+      JSON.stringify(entry.payload),
+      entry.action ? JSON.stringify(entry.action) : null,
+      entry.scheduled_at?.toISOString() ?? null,
+    ],
+  });
+}
+
+export async function getPendingAlerts(userId: number): Promise<{
+  id: number;
+  payload: Record<string, any>;
+  action: Record<string, any> | null;
+}[]> {
+  const result = await client.execute({
+    sql: `SELECT id, payload, action FROM queue
+          WHERE user_id = ? AND type = 'alert' AND status = 'pending'
+          AND (scheduled_at IS NULL OR scheduled_at <= datetime('now'))
+          ORDER BY created_at ASC`,
+    args: [userId],
+  });
+
+  return result.rows.map(row => ({
+    id: row.id as number,
+    payload: JSON.parse(row.payload as string),
+    action: row.action ? JSON.parse(row.action as string) : null,
+  }));
+}
+
+export async function getPendingInternals(): Promise<{
+  id: number;
+  user_id: number | null;
+  payload: Record<string, any>;
+}[]> {
+  const result = await client.execute({
+    sql: `SELECT id, user_id, payload FROM queue
+          WHERE type = 'internal' AND status = 'pending'
+          AND (scheduled_at IS NULL OR scheduled_at <= datetime('now'))
+          ORDER BY created_at ASC`,
+    args: [],
+  });
+
+  return result.rows.map(row => ({
+    id: row.id as number,
+    user_id: row.user_id as number | null,
+    payload: JSON.parse(row.payload as string),
+  }));
+}
+
+export async function updateQueueStatus(
+  id: number,
+  status: "pending" | "sent" | "confirmed" | "rejected" | "done" | "failed"
+): Promise<void> {
+  await client.execute({
+    sql: "UPDATE queue SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    args: [status, id],
   });
 }

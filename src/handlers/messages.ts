@@ -1,6 +1,7 @@
 import type { Context } from "telegraf";
 import { getUser, getSoul, getUserProfile, getCurrentContext, updateCurrentContext, updateUserProfile, updateSoul, addMessage, getConversation } from "@/services/db";
-import { chat, inferProfile, interpretIntent, normalizeTimezone } from "@/services/ai";
+import { chat, inferProfile, interpretIntent, normalizeTimezone, normalizeWorkingHours, isValidIANA } from "@/services/ai";
+
 
 export async function handleMessage(ctx: Context) {
   const user = ctx.from!;
@@ -61,20 +62,37 @@ async function handleOnboarding(ctx: Context, userId: number, text: string, soul
   const step = context.onboarding_step;
 
   if (step === "new") {
-    await ctx.reply(`¡Bienvenido! Antes de empezar, me gustaría conocerte un poco.\n\n¿Cómo quieres que me llame?`);
+    await ctx.reply(`¡Hola! Soy Bridge, tu asistente personal. 🌉\n\n¿Quieres ponerme un mote?`);
     await updateCurrentContext(userId, { onboarding_step: "name" });
     return true;
   }
 
   if (step === "name") {
-    await updateSoul(userId, { name: text, _confirmed: ["name"] });
-    await ctx.reply(`Perfecto, me llamaré <b>${text}</b>. 🙌\n\nPara no molestarte a deshora, ¿en qué país o región vives?`, { parse_mode: "HTML" });
+    const intent = await interpretIntent(userId, text, ["yes", "no"]);
+    if (intent === "yes") {
+      await updateSoul(userId, { name: text, _confirmed: ["name"] });
+      await ctx.reply(`¡Me encanta! A partir de ahora me llamaré <b>${text}</b>. 🙌\n\nY tú, ¿cómo te llamas?`, { parse_mode: "HTML" });
+    } else {
+      await updateSoul(userId, { name: "Bridge", _confirmed: ["name"] });
+      await ctx.reply(`¡Como quieras! Seguiré siendo Bridge. 🌉\n\nY tú, ¿cómo te llamas?`);
+    }
+    await updateCurrentContext(userId, { onboarding_step: "user_name" });
+    return true;
+  }
+
+  if (step === "user_name") {
+    await updateUserProfile(userId, { n: text, _confirmed: ["n"] });
+    await ctx.reply(`Encantado, <b>${text}</b>. 😊\n\nPara no molestarte a deshora, ¿en qué país o ciudad vives?`, { parse_mode: "HTML" });
     await updateCurrentContext(userId, { onboarding_step: "tz" });
     return true;
   }
 
   if (step === "tz") {
     const tz = await normalizeTimezone(userId, text);
+    if (!isValidIANA(tz)) {
+      await ctx.reply(`No he podido identificar tu zona horaria. ¿Puedes decirme tu ciudad o país?`);
+      return true;
+    }
     await updateUserProfile(userId, { tz, _confirmed: ["tz"] });
     await ctx.reply(`Anotado.\n\nMi horario por defecto es de 09:00 a 18:00. ¿Te parece bien o prefieres otro horario?`);
     await updateCurrentContext(userId, { onboarding_step: "hl" });
@@ -84,11 +102,12 @@ async function handleOnboarding(ctx: Context, userId: number, text: string, soul
   if (step === "hl") {
     const intent = await interpretIntent(userId, text, ["confirm", "custom"]);
     if (intent === "custom") {
-      await updateUserProfile(userId, { hl: text, _confirmed: ["tz", "hl"] });
+      const hl = await normalizeWorkingHours(userId, text);
+      await updateUserProfile(userId, { hl, _confirmed: ["tz", "hl"] });
     } else {
-      await updateCurrentContext(userId, { onboarding_step: "complete" });
+      await updateUserProfile(userId, { hl: "09:00-18:00", _confirmed: ["tz", "hl"] });
     }
-    await ctx.reply(`¡Todo listo! Ya puedo empezar a ayudarte. 🎉\n\nPuedes vincular tu cuenta de Google escribiendo /conectar.`);
+    await ctx.reply(`¡Todo listo! Ya puedo empezar a ayudarte. 🎉\n\nPuedes vincular tu cuenta de Google desde tu Panel.`);
     await updateCurrentContext(userId, { onboarding_step: "complete" });
     return true;
   }

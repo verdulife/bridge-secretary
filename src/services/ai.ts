@@ -17,7 +17,7 @@ PROFILE: ${JSON.stringify(profile)}
 CONTEXT: ${JSON.stringify(context)}
 SYSTEM: {"datetime":"${now}","user_name":"${profile.n ?? "desconocido"}"}
 
-IMPORTANTE: El campo datetime del SYSTEM es la fecha y hora REAL y ACTUAL del usuario. Tienes acceso a ella y puedes usarla con total confianza. Nunca digas que no tienes acceso a la hora o fecha.`;
+IMPORTANTE: Tienes acceso a la fecha y hora actual del usuario en el campo datetime. Úsala solo si el usuario te la pregunta explícitamente o si es relevante para responder su consulta. No la menciones de forma proactiva.`;
 }
 
 export async function chat(
@@ -142,9 +142,8 @@ export async function inferProfile(
       {
         role: "system",
         content: `Analiza si el usuario está pidiendo EXPLÍCITAMENTE cambiar algún dato de su perfil o del asistente.
-Solo actualiza si hay una intención clara y directa como "llámame X", "vivo en Y", "cambia mi horario a Z".
+Solo actualiza si hay una intención clara y directa como "llámame X", "vivo en Y", "cambia mi horario a Z", "quiero llamarte X".
 Si el usuario simplemente menciona algo sin intención de cambio, devuelve campos vacíos.
-Campos bloqueados que NUNCA puedes actualizar: soul=${JSON.stringify(confirmed.soul)}, profile=${JSON.stringify(confirmed.profile)}
 Soul actual: ${JSON.stringify(soul)}
 Perfil actual: ${JSON.stringify(profile)}
 Responde SOLO en JSON: {"soul":{},"profile":{}}`
@@ -214,7 +213,8 @@ export async function normalizeTimezone(
     messages: [
       {
         role: "system",
-        content: `Convierte esta ubicación o zona horaria al formato IANA (ej: Europe/Madrid, America/New_York).
+        content: `Convierte esta ubicación o zona horaria al formato IANA exacto (ej: Europe/Madrid, America/New_York, America/Mexico_City).
+IMPORTANTE: Devuelve SOLO zonas horarias IANA válidas. Nunca devuelvas nombres de países o ciudades sin formato IANA.
 Responde SOLO en JSON: {"tz":"zona_iana"}`
       },
       { role: "user", content: input }
@@ -234,5 +234,43 @@ Responde SOLO en JSON: {"tz":"zona_iana"}`
     return result.tz ?? "Europe/Madrid";
   } catch {
     return "Europe/Madrid";
+  }
+}
+
+export function isValidIANA(tz: string): boolean {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function normalizeWorkingHours(
+  userId: number,
+  input: string
+): Promise<string> {
+  const response = await groq.chat.completions.create({
+    model: MODEL_SMALL,
+    temperature: 0,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: `Convierte este horario laboral al formato HH:MM-HH:MM en 24h.
+Ejemplos: "de 9 a 6" → "09:00-18:00", "8 a 15" → "08:00-15:00".
+Responde SOLO en JSON: {"hl":"HH:MM-HH:MM"}`
+      },
+      { role: "user", content: input }
+    ]
+  });
+
+  await trackUsage(userId, MODEL_SMALL, response.usage?.prompt_tokens ?? 0, response.usage?.completion_tokens ?? 0, "normalize_hl");
+
+  try {
+    const result = JSON.parse(response.choices[0]?.message.content ?? "{}");
+    return result.hl ?? "09:00-18:00";
+  } catch {
+    return "09:00-18:00";
   }
 }
