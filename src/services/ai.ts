@@ -55,7 +55,7 @@ export async function chat(
 export async function classifyEmail(
   userId: number,
   email: { from: string; subject: string; snippet: string }
-): Promise<{ summary: string; important: boolean; is_spam: boolean }> {
+): Promise<{ summary: string; category: "attention" | "pending" | "informative" | "spam" }> {
   const response = await groq.chat.completions.create({
     model: MODEL_SMALL,
     temperature: 0.1,
@@ -63,8 +63,13 @@ export async function classifyEmail(
     messages: [
       {
         role: "system",
-        content: `Clasifica este email. Responde SOLO en JSON:
-{"summary":"resumen en una frase","important":boolean,"is_spam":boolean}`
+        content: `Clasifica este email en una de estas categorías:
+- attention: urgente, requiere acción inmediata
+- pending: requiere acción pero no es urgente
+- informative: útil pero sin acción requerida
+- spam: descartable, publicidad, irrelevante
+
+Responde SOLO en JSON: {"summary":"resumen en una frase","category":"attention|pending|informative|spam"}`
       },
       {
         role: "user",
@@ -84,7 +89,7 @@ export async function classifyEmail(
   try {
     return JSON.parse(response.choices[0]?.message.content ?? "{}");
   } catch {
-    return { summary: "Nuevo correo recibido.", important: false, is_spam: false };
+    return { summary: "Nuevo correo recibido.", category: "informative" };
   }
 }
 

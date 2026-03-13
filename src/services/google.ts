@@ -54,3 +54,94 @@ export function createGmailClient(
 
   return google.gmail({ version: "v1", auth: client });
 }
+
+export async function getUnreadEmails(tokens: {
+  access_token: string;
+  refresh_token: string;
+  expiry_date: number;
+}, onRefresh?: (newTokens: typeof tokens) => void): Promise<{
+  id: string;
+  from: string;
+  subject: string;
+  snippet: string;
+  date: string;
+}[]> {
+  const gmail = createGmailClient(tokens, onRefresh);
+
+  const list = await gmail.users.messages.list({
+    userId: "me",
+    q: "in:inbox -in:spam -label:Bridge\\/Revisado",
+    maxResults: 20,
+  });
+
+  const messages = list.data.messages ?? [];
+  if (messages.length === 0) return [];
+
+  const emails = await Promise.all(
+    messages.map(async (msg) => {
+      const full = await gmail.users.messages.get({
+        userId: "me",
+        id: msg.id!,
+        format: "metadata",
+        metadataHeaders: ["From", "Subject", "Date"],
+      });
+
+      const headers = full.data.payload?.headers ?? [];
+      const get = (name: string) => headers.find(h => h.name === name)?.value ?? "";
+
+      return {
+        id: msg.id!,
+        from: get("From"),
+        subject: get("Subject"),
+        snippet: full.data.snippet ?? "",
+        date: get("Date"),
+      };
+    })
+  );
+
+  return emails;
+}
+
+export type EmailCategory = "attention" | "pending" | "informative" | "spam";
+
+export async function labelEmail(
+  tokens: { access_token: string; refresh_token: string; expiry_date: number },
+  emailId: string,
+  category: EmailCategory,
+  onRefresh?: (newTokens: typeof tokens) => void
+): Promise<void> {
+  const gmail = createGmailClient(tokens, onRefresh);
+
+  const labelsRes = await gmail.users.labels.list({ userId: "me" });
+  const labels = labelsRes.data.labels ?? [];
+
+  async function getOrCreateLabel(name: string): Promise<string> {
+    const existing = labels.find(l => l.name === name);
+    if (existing?.id) return existing.id;
+    const created = await gmail.users.labels.create({
+      userId: "me",
+      requestBody: { name, labelListVisibility: "labelShow", messageListVisibility: "show" },
+    });
+    return created.data.id!;
+  }
+
+  const categoryMap: Record<EmailCategory, string> = {
+    attention: "Bridge/Atención",
+    pending: "Bridge/Pendiente",
+    informative: "Bridge/Informativo",
+    spam: "Bridge/Spam",
+  };
+
+  const [revisadoId, categoryId] = await Promise.all([
+    getOrCreateLabel("Bridge/Revisado"),
+    getOrCreateLabel(categoryMap[category]),
+  ]);
+
+  await gmail.users.messages.modify({
+    userId: "me",
+    id: emailId,
+    requestBody: {
+      addLabelIds: [revisadoId, categoryId],
+    },
+  });
+}
