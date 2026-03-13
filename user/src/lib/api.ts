@@ -21,28 +21,28 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 }
 
 export function getProfile() {
-  return request<{ soul: Record<string, any>; profile: Record<string, any> }>("/panel/profile");
+  return request<{ soul: Record<string, any>; profile: Record<string, any> }>("/api/panel/profile");
 }
 
 export function updateProfile(data: { soul?: Record<string, any>; profile?: Record<string, any> }) {
-  return request("/panel/profile", {
+  return request("/api/panel/profile", {
     method: "POST",
     body: JSON.stringify(data),
   });
 }
 
 export function getUsage() {
-  return request<{ total_input: number; total_output: number; by_task: Record<string, number> }>("/panel/usage");
+  return request<{ total_input: number; total_output: number; by_task: Record<string, number> }>("/api/panel/usage");
 }
 
 export function deleteAccount() {
-  return request("/panel/account", { method: "DELETE" });
+  return request("/api/panel/account", { method: "DELETE" });
 }
 
 export function getIntegrations() {
-  return request<{ gmail: boolean; calendar: boolean; notion: boolean }>("/panel/integrations");
+  return request<{ gmail: boolean; calendar: boolean; notion: boolean }>("/api/panel/integrations");
 }
 
 export function getOAuthUrl() {
-  return request<{ url: string }>("/auth/gmail/url");
+  return request<{ url: string }>("/api/auth/gmail/url");
 }

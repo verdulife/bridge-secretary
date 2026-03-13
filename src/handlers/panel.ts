@@ -14,7 +14,7 @@ export async function handlePanel(req: Request): Promise<Response> {
   const path = url.pathname;
 
   // GET /panel/profile
-  if (path === "/panel/profile" && req.method === "GET") {
+  if (path === "/api/panel/profile" && req.method === "GET") {
     const [soul, profile] = await Promise.all([
       getSoul(userId),
       getUserProfile(userId),
@@ -23,15 +23,30 @@ export async function handlePanel(req: Request): Promise<Response> {
   }
 
   // POST /panel/profile
-  if (path === "/panel/profile" && req.method === "POST") {
+  if (path === "/api/panel/profile" && req.method === "POST") {
     const body = await req.json() as { soul?: Record<string, any>; profile?: Record<string, any> };
     if (body.soul) await updateSoul(userId, body.soul);
     if (body.profile) await updateUserProfile(userId, body.profile);
     return Response.json({ ok: true });
   }
 
+  // GET /panel/integrations
+  if (path === "/api/panel/integrations" && req.method === "GET") {
+    const result = await client.execute({
+      sql: "SELECT google_token FROM users WHERE id = ?",
+      args: [userId],
+    });
+
+    const user = result.rows[0];
+    return Response.json({
+      gmail: !!user?.google_token,
+      calendar: false,
+      notion: false,
+    });
+  }
+
   // GET /panel/usage
-  if (path === "/panel/usage" && req.method === "GET") {
+  if (path === "/api/panel/usage" && req.method === "GET") {
     const result = await client.execute({
       sql: `SELECT 
               SUM(input_tokens) as total_input,
@@ -58,26 +73,11 @@ export async function handlePanel(req: Request): Promise<Response> {
   }
 
   // DELETE /panel/account
-  if (path === "/panel/account" && req.method === "DELETE") {
+  if (path === "/api/panel/account" && req.method === "DELETE") {
     await client.execute({ sql: "DELETE FROM conversations WHERE user_id = ?", args: [userId] });
     await client.execute({ sql: "DELETE FROM usage WHERE user_id = ?", args: [userId] });
     await client.execute({ sql: "DELETE FROM users WHERE id = ?", args: [userId] });
     return Response.json({ ok: true });
-  }
-
-  // GET /panel/integrations
-  if (path === "/panel/integrations" && req.method === "GET") {
-    const result = await client.execute({
-      sql: "SELECT google_token FROM users WHERE id = ?",
-      args: [userId],
-    });
-
-    const user = result.rows[0];
-    return Response.json({
-      gmail: !!user?.google_token,
-      calendar: false,
-      notion: false,
-    });
   }
 
   return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });

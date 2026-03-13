@@ -15,7 +15,7 @@ export async function handleAuth(req: Request): Promise<Response> {
   }
 
   // GET /auth/gmail/url — devuelve la URL de OAuth
-  if (path === "/auth/gmail/url" && req.method === "GET") {
+  if (path === "/api/auth/gmail/url" && req.method === "GET") {
     const initData = req.headers.get("x-init-data") ?? "";
     const { valid, userId } = verifyInitData(initData);
 
@@ -29,7 +29,7 @@ export async function handleAuth(req: Request): Promise<Response> {
   }
 
   // GET /auth/gmail/callback — recibe el código de Google
-  if (path === "/auth/gmail/callback" && req.method === "GET") {
+  if (path === "/api/auth/gmail/callback" && req.method === "GET") {
     const code = url.searchParams.get("code");
     const userId = url.searchParams.get("state");
 

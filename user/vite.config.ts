@@ -6,6 +6,6 @@ export default defineConfig({
   plugins: [svelte(), tailwindcss()],
   base: './',
   server: {
-    allowedHosts: ['bridge-panel.loca.lt'],
-  },
+    allowedHosts: ["spiritous-diedre-nonenrolled.ngrok-free.dev"],
+  }
 })
