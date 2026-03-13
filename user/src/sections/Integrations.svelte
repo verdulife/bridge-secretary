@@ -36,6 +36,11 @@
   onMount(() => {
     fetchIntegrations();
     tg.onEvent("activated", fetchIntegrations);
+
+    // Fallback para cuando Telegram no dispara activated
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") fetchIntegrations();
+    });
   });
 
   const items = [

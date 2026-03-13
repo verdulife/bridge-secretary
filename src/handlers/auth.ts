@@ -6,14 +6,6 @@ export async function handleAuth(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
 
-  // GET /auth/gmail — redirige a Google
-  if (path === "/auth/gmail" && req.method === "GET") {
-    const initData = req.headers.get("x-init-data") ?? "";
-    // La URL de OAuth la genera el Panel directamente via getOAuthUrl()
-    // Este endpoint no es necesario, el Panel llama a getAuthUrl() localmente
-    return new Response("Not found", { status: 404 });
-  }
-
   // GET /auth/gmail/url — devuelve la URL de OAuth
   if (path === "/api/auth/gmail/url" && req.method === "GET") {
     const initData = req.headers.get("x-init-data") ?? "";
