@@ -1,6 +1,6 @@
 import type { Context } from "telegraf";
-import { chat, inferProfile, interpretIntent, normalizeTimezone, normalizeWorkingHours, isValidIANA, summarizeEmails } from "@/services/ai";
-import { getUnreadEmails } from "@/services/google";
+import { chat, inferProfile, interpretIntent, normalizeTimezone, normalizeWorkingHours, isValidIANA, summarizeEmails, extractSearchQuery } from "@/services/ai";
+import { getUnreadEmails, searchEmails, archiveEmail, deleteEmail } from "@/services/google";
 import { getUser, getSoul, getUserProfile, getCurrentContext, updateCurrentContext, updateUserProfile, updateSoul, addMessage, getConversation } from "@/services/db";
 
 function escapeHTML(text: string): string {
@@ -50,24 +50,54 @@ export async function handleMessage(ctx: Context) {
   let finalReply: string;
 
   if (existing.google_token) {
-    const intent = await interpretIntent(user.id, text, ["get_emails", "conversation"]);
+    const intent = await interpretIntent(user.id, text, ["get_emails", "get_single_email", "conversation"]);
+    const tokens = JSON.parse(existing.google_token);
+
+    const onRefresh = async (newTokens: typeof tokens) => {
+      const { client } = await import("@/services/db");
+      await client.execute({
+        sql: "UPDATE users SET google_token = ? WHERE id = ?",
+        args: [JSON.stringify(newTokens), user.id],
+      });
+    };
 
     if (intent === "get_emails") {
       await ctx.sendChatAction("typing");
-      const tokens = JSON.parse(existing.google_token);
-      const emails = await getUnreadEmails(tokens, async (newTokens) => {
-        const { client } = await import("@/services/db");
-        await client.execute({
-          sql: "UPDATE users SET google_token = ? WHERE id = ?",
-          args: [JSON.stringify(newTokens), user.id],
-        });
-      });
+      const emails = await getUnreadEmails(tokens, onRefresh);
 
       if (emails.length === 0) {
         finalReply = "No tienes emails nuevos sin revisar. 📭";
       } else {
         finalReply = await summarizeEmails(user.id, emails);
       }
+
+    } else if (intent === "get_single_email") {
+      await ctx.sendChatAction("typing");
+      const query = await extractSearchQuery(user.id, text);
+      const emails = await searchEmails(tokens, query, onRefresh);
+
+      if (emails.length === 0) {
+        finalReply = "No he encontrado ningún email con esos criterios. 📭";
+      } else {
+        const email = emails[0];
+        const summary = await summarizeEmails(user.id, [email]);
+
+        await ctx.reply(escapeHTML(summary), {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [[
+              { text: "📬 Abrir", url: `https://mail.google.com/mail/u/0/#inbox/${email.id}` },
+              { text: "📦 Archivar", callback_data: `archive:${email.id}` },
+              { text: "🗑️ Eliminar", callback_data: `delete:${email.id}` },
+            ]],
+          },
+        });
+
+        await addMessage(user.id, "assistant", summary);
+        await updateCurrentContext(user.id, { last_active: new Date().toISOString() });
+        return;
+      }
+
     } else {
       finalReply = await chat(user.id, text, history, soul, profile, context);
     }

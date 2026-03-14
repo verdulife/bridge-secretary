@@ -277,3 +277,32 @@ Responde SOLO en JSON: {"hl":"HH:MM-HH:MM"}`
     return "09:00-18:00";
   }
 }
+
+export async function extractSearchQuery(
+  userId: number,
+  message: string
+): Promise<string> {
+  const response = await groq.chat.completions.create({
+    model: MODEL_SMALL,
+    temperature: 0,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: `Extrae una query de búsqueda para Gmail a partir del mensaje del usuario.
+Ejemplos: "emails de Ahrefs" → "from:ahrefs", "último email de Temu" → "from:temu", "emails sobre factura" → "subject:factura".
+Responde SOLO en JSON: {"query":"gmail_search_query"}`
+      },
+      { role: "user", content: message }
+    ]
+  });
+
+  await trackUsage(userId, MODEL_SMALL, response.usage?.prompt_tokens ?? 0, response.usage?.completion_tokens ?? 0, "extract_search_query");
+
+  try {
+    const result = JSON.parse(response.choices[0]?.message.content ?? "{}");
+    return result.query ?? "";
+  } catch {
+    return "";
+  }
+}

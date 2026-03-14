@@ -145,3 +145,77 @@ export async function labelEmail(
     },
   });
 }
+
+export async function archiveEmail(
+  tokens: { access_token: string; refresh_token: string; expiry_date: number },
+  emailId: string,
+  onRefresh?: (newTokens: typeof tokens) => void
+): Promise<void> {
+  const gmail = createGmailClient(tokens, onRefresh);
+  await gmail.users.messages.modify({
+    userId: "me",
+    id: emailId,
+    requestBody: {
+      removeLabelIds: ["INBOX"],
+    },
+  });
+}
+
+export async function deleteEmail(
+  tokens: { access_token: string; refresh_token: string; expiry_date: number },
+  emailId: string,
+  onRefresh?: (newTokens: typeof tokens) => void
+): Promise<void> {
+  const gmail = createGmailClient(tokens, onRefresh);
+  await gmail.users.messages.trash({
+    userId: "me",
+    id: emailId,
+  });
+}
+
+export async function searchEmails(
+  tokens: { access_token: string; refresh_token: string; expiry_date: number },
+  query: string,
+  onRefresh?: (newTokens: typeof tokens) => void
+): Promise<{
+  id: string;
+  from: string;
+  subject: string;
+  snippet: string;
+  date: string;
+}[]> {
+  const gmail = createGmailClient(tokens, onRefresh);
+
+  const list = await gmail.users.messages.list({
+    userId: "me",
+    q: query,
+    maxResults: 5,
+  });
+
+  const messages = list.data.messages ?? [];
+  if (messages.length === 0) return [];
+
+  const emails = await Promise.all(
+    messages.map(async (msg) => {
+      const full = await gmail.users.messages.get({
+        userId: "me",
+        id: msg.id!,
+        format: "metadata",
+        metadataHeaders: ["From", "Subject", "Date"],
+      });
+
+      const headers = full.data.payload?.headers ?? [];
+      const get = (name: string) => headers.find(h => h.name === name)?.value ?? "";
+
+      return {
+        id: msg.id!,
+        from: get("From"),
+        subject: get("Subject"),
+        snippet: full.data.snippet ?? "",
+        date: get("Date"),
+      };
+    })
+  );
+
+  return emails;
+}
