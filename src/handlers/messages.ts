@@ -1,7 +1,14 @@
 import type { Context } from "telegraf";
+import { chat, inferProfile, interpretIntent, normalizeTimezone, normalizeWorkingHours, isValidIANA, summarizeEmails } from "@/services/ai";
+import { getUnreadEmails } from "@/services/google";
 import { getUser, getSoul, getUserProfile, getCurrentContext, updateCurrentContext, updateUserProfile, updateSoul, addMessage, getConversation } from "@/services/db";
-import { chat, inferProfile, interpretIntent, normalizeTimezone, normalizeWorkingHours, isValidIANA } from "@/services/ai";
 
+function escapeHTML(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
 
 export async function handleMessage(ctx: Context) {
   const user = ctx.from!;
@@ -10,7 +17,7 @@ export async function handleMessage(ctx: Context) {
   const existing = await getUser(user.id);
 
   if (!existing) {
-    await ctx.reply(`¡Hola! Soy Bridge 🌉, tu nuevo secretario personal.\n\nTe ayudo a tener tu email, tareas y recordatorios al día, para que tengas un control más activo de todo sin esfuerzo.\n\nTodavía estoy en fase privada. Si quieres unirte a la lista de espera, escribe /acceso.`);
+    await ctx.reply(`¡Hola! Soy Bridge 🌉, tu nuevo asistente personal.\n\nTe ayudo a tener tu email, tareas y recordatorios al día, para que tengas un control más activo de todo sin esfuerzo.\n\nTodavía estoy en fase privada. Si quieres unirte a la lista de espera, escribe /acceso.`);
     return;
   }
 
@@ -24,7 +31,6 @@ export async function handleMessage(ctx: Context) {
     return;
   }
 
-  // Usuario activo — lógica principal
   await ctx.sendChatAction("typing");
 
   const [soul, profile, context, history] = await Promise.all([
@@ -41,11 +47,36 @@ export async function handleMessage(ctx: Context) {
   // Guardar mensaje del usuario
   await addMessage(user.id, "user", text);
 
-  // Llamada a Groq
-  const reply = await chat(user.id, text, history, soul, profile, context);
+  let finalReply: string;
+
+  if (existing.google_token) {
+    const intent = await interpretIntent(user.id, text, ["get_emails", "conversation"]);
+
+    if (intent === "get_emails") {
+      await ctx.sendChatAction("typing");
+      const tokens = JSON.parse(existing.google_token);
+      const emails = await getUnreadEmails(tokens, async (newTokens) => {
+        const { client } = await import("@/services/db");
+        await client.execute({
+          sql: "UPDATE users SET google_token = ? WHERE id = ?",
+          args: [JSON.stringify(newTokens), user.id],
+        });
+      });
+
+      if (emails.length === 0) {
+        finalReply = "No tienes emails nuevos sin revisar. 📭";
+      } else {
+        finalReply = await summarizeEmails(user.id, emails);
+      }
+    } else {
+      finalReply = await chat(user.id, text, history, soul, profile, context);
+    }
+  } else {
+    finalReply = await chat(user.id, text, history, soul, profile, context);
+  }
 
   // Guardar respuesta
-  await addMessage(user.id, "assistant", reply);
+  await addMessage(user.id, "assistant", finalReply);
 
   // Inferir cambios en soul o perfil
   const updates = await inferProfile(user.id, text, soul, profile);
@@ -55,7 +86,7 @@ export async function handleMessage(ctx: Context) {
   // Actualizar last_active
   await updateCurrentContext(user.id, { last_active: new Date().toISOString() });
 
-  await ctx.reply(reply, { parse_mode: "HTML" });
+  await ctx.reply(escapeHTML(finalReply), { parse_mode: "HTML" });
 }
 
 async function handleOnboarding(ctx: Context, userId: number, text: string, soul: Record<string, any>, profile: Record<string, any>, context: Record<string, any>): Promise<boolean> {

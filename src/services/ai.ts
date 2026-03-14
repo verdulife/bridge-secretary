@@ -105,8 +105,11 @@ export async function summarizeEmails(
     messages: [
       {
         role: "system",
-        content: `Resume estos correos de forma concisa y cercana. Agrupa los similares.
-PROHIBIDO Markdown. Usa solo HTML si necesitas formato.`
+        content: `Eres un asistente personal que resume emails de forma natural y conversacional.
+Agrupa los emails similares y presenta un resumen breve y amigable como si se lo contaras a un amigo.
+Máximo 3-4 líneas en total. No listes todos los detalles, solo lo más relevante.
+Ejemplo de tono: "Tienes un par de alertas de Ahrefs sobre tus sitios web y varios emails de Temu con ofertas."
+PROHIBIDO usar Markdown o asteriscos. Sin listas ni bullets. Usa solo texto natural.`
       },
       { role: "user", content: emailList }
     ]

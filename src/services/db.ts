@@ -12,12 +12,13 @@ export interface User {
   username: string | null;
   first_name: string | null;
   status: UserStatus;
+  google_token: string | null;
   created_at: string;
 }
 
 export async function getUser(id: number): Promise<User | null> {
   const result = await client.execute({
-    sql: "SELECT * FROM users WHERE id = ?",
+    sql: "SELECT id, username, first_name, status, google_token, created_at FROM users WHERE id = ?",
     args: [id],
   });
 
@@ -29,6 +30,7 @@ export async function getUser(id: number): Promise<User | null> {
     username: row.username as string | null,
     first_name: row.first_name as string | null,
     status: row.status as UserStatus,
+    google_token: row.google_token as string | null,
     created_at: row.created_at as string,
   };
 }
@@ -206,4 +208,12 @@ export async function updateQueueStatus(
     sql: "UPDATE queue SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     args: [status, id],
   });
+}
+
+export async function isEmailQueued(userId: number, emailId: string): Promise<boolean> {
+  const result = await client.execute({
+    sql: `SELECT id FROM queue WHERE user_id = ? AND json_extract(payload, '$.email_id') = ?`,
+    args: [userId, emailId],
+  });
+  return result.rows.length > 0;
 }

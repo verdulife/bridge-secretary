@@ -1,24 +1,24 @@
 import { getUnreadEmails, labelEmail } from "@/services/google";
 import { classifyEmail } from "@/services/ai";
-import { client, enqueue } from "@/services/db";
+import { client, enqueue, isEmailQueued } from "@/services/db";
+import { sendPendingAlerts } from "@/services/notify";
 
 const INTERVAL = 5 * 60 * 1000; // 5 minutos
 
 async function getActiveUsers(): Promise<{
   id: number;
-  google_token: string;
+  google_token: string | null;
   user_profile: string;
 }[]> {
   const result = await client.execute({
     sql: `SELECT id, google_token, user_profile FROM users
-          WHERE status IN ('beta', 'active')
-          AND google_token IS NOT NULL`,
+          WHERE status IN ('beta', 'active')`,
     args: [],
   });
 
   return result.rows.map(row => ({
     id: row.id as number,
-    google_token: row.google_token as string,
+    google_token: row.google_token as string | null,
     user_profile: row.user_profile as string,
   }));
 }
@@ -74,7 +74,13 @@ function getNextWorkdayStart(profile: Record<string, any>): Date {
   return new Date(Date.UTC(year, month, day, startH - (tz === "Europe/Madrid" ? 1 : 0), startM));
 }
 
-async function processUser(user: { id: number; google_token: string; user_profile: string }) {
+async function processUser(user: { id: number; google_token: string | null; user_profile: string }) {
+  // 1. Enviar alertas pendientes siempre
+  await sendPendingAlerts(user.id);
+
+  // 2. Procesar Gmail solo si tiene token
+  if (!user.google_token) return;
+
   const tokens = JSON.parse(user.google_token);
   const profile = user.user_profile ? JSON.parse(user.user_profile) : {};
 
@@ -99,6 +105,9 @@ async function processUser(user: { id: number; google_token: string; user_profil
   const informativeAccum: typeof emails = [];
 
   for (const email of emails) {
+    const alreadyQueued = await isEmailQueued(user.id, email.id);
+    if (alreadyQueued) continue;
+
     const { summary, category } = await classifyEmail(user.id, email);
 
     await labelEmail(tokens, email.id, category, onRefresh);
@@ -121,7 +130,6 @@ async function processUser(user: { id: number; google_token: string; user_profil
     }
   }
 
-  // Encolar resumen de informativos y spam si hay
   if (informativeAccum.length > 0) {
     await enqueue({
       user_id: user.id,
