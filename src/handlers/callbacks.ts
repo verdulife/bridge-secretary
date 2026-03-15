@@ -1,5 +1,5 @@
 import type { Context } from "telegraf";
-import { archiveEmail, deleteEmail, archiveEmails, deleteEmails } from "@/services/google";
+import { archiveEmail, deleteEmail, archiveEmails, deleteEmails, moveEmailsToFolder } from "@/services/google";
 import { client, getCurrentContext, updateCurrentContext } from "@/services/db";
 
 export async function handleCallback(ctx: Context) {
@@ -35,6 +35,7 @@ export async function handleCallback(ctx: Context) {
       action: string;
       emailIds: string[];
       description: string;
+      folder?: string;
     } | null;
 
     if (!awaiting) {
@@ -71,6 +72,16 @@ export async function handleCallback(ctx: Context) {
               ? "Eliminado. 🗑️"
               : `${awaiting.emailIds.length} emails eliminados. 🗑️`
           );
+        } else if (awaiting.action === "move_emails" && awaiting.folder) {
+          await moveEmailsToFolder(tokens, awaiting.emailIds, awaiting.folder);
+          await ctx.answerCbQuery("✅");
+          await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+          await ctx.reply(
+            awaiting.emailIds.length === 1
+              ? `Movido a <b>${awaiting.folder}</b>. 📁`
+              : `${awaiting.emailIds.length} emails movidos a <b>${awaiting.folder}</b>. 📁`,
+            { parse_mode: "HTML" }
+          );
         }
       } catch (err) {
         console.error("❌ Error ejecutando awaiting action:", err);
@@ -80,6 +91,7 @@ export async function handleCallback(ctx: Context) {
         await updateCurrentContext(userId, { awaiting: null });
       }
     }
+
     return;
   }
 

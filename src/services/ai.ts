@@ -351,3 +351,53 @@ Responde SOLO en JSON: {"query":"gmail_search_query"}`
     return "";
   }
 }
+
+export async function extractMoveIntent(
+  userId: number,
+  message: string
+): Promise<{ query: string; folder: string }> {
+  const response = await groq.chat.completions.create({
+    model: MODEL_SMALL,
+    temperature: 0,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: `Extrae dos cosas del mensaje del usuario:
+1. Una query de búsqueda para Gmail con el criterio de los emails a mover
+2. El nombre de la carpeta destino
+
+Reglas para la query:
+- Usa from: solo cuando el usuario mencione un remitente, empresa o persona concreta
+- Para cualquier otro criterio usa palabras sueltas sin prefijos
+- NUNCA añadas filtros de ubicación, etiquetas o carpetas en la query
+
+Ejemplos:
+- "mueve los emails de Temu a Promociones" → {"query":"from:temu","folder":"Promociones"}
+- "mueve las facturas de Amazon a Gestión" → {"query":"from:amazon facturas","folder":"Gestión"}
+- "mueve el email sobre el contrato a Trabajo" → {"query":"contrato","folder":"Trabajo"}
+
+Responde SOLO en JSON: {"query":"gmail_search_query","folder":"nombre_carpeta"}`,
+      },
+      { role: "user", content: message },
+    ],
+  });
+
+  await trackUsage(
+    userId,
+    MODEL_SMALL,
+    response.usage?.prompt_tokens ?? 0,
+    response.usage?.completion_tokens ?? 0,
+    "extract_move_intent"
+  );
+
+  try {
+    const result = JSON.parse(response.choices[0]?.message.content ?? "{}");
+    return {
+      query: result.query ?? "",
+      folder: result.folder ?? "",
+    };
+  } catch {
+    return { query: "", folder: "" };
+  }
+}

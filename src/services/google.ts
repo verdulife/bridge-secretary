@@ -283,3 +283,47 @@ export async function deleteEmails(
     gmail.users.messages.trash({ userId: "me", id })
   ));
 }
+
+export async function moveEmailsToFolder(
+  tokens: { access_token: string; refresh_token: string; expiry_date: number },
+  emailIds: string[],
+  folderName: string,
+  onRefresh?: (newTokens: typeof tokens) => void
+): Promise<void> {
+  const gmail = createGmailClient(tokens, onRefresh);
+
+  // Buscar o crear el label
+  const labelsRes = await gmail.users.labels.list({ userId: "me" });
+  const labels = labelsRes.data.labels ?? [];
+
+  let labelId: string;
+  const existing = labels.find((l) => l.name?.toLowerCase() === folderName.toLowerCase());
+
+  if (existing?.id) {
+    labelId = existing.id;
+  } else {
+    const created = await gmail.users.labels.create({
+      userId: "me",
+      requestBody: {
+        name: folderName,
+        labelListVisibility: "labelShow",
+        messageListVisibility: "show",
+      },
+    });
+    labelId = created.data.id!;
+  }
+
+  // Mover emails: añadir label destino, quitar INBOX
+  await Promise.all(
+    emailIds.map((id) =>
+      gmail.users.messages.modify({
+        userId: "me",
+        id,
+        requestBody: {
+          addLabelIds: [labelId],
+          removeLabelIds: ["INBOX"],
+        },
+      })
+    )
+  );
+}

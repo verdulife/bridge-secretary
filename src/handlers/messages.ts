@@ -1,6 +1,6 @@
 import type { Context } from "telegraf";
-import { chat, inferProfile, interpretIntent, normalizeTimezone, normalizeWorkingHours, isValidIANA, summarizeEmails, extractSearchQuery, MODEL_LARGE } from "@/services/ai";
-import { getUnreadEmails, searchEmails } from "@/services/google";
+import { chat, inferProfile, interpretIntent, normalizeTimezone, normalizeWorkingHours, isValidIANA, summarizeEmails, extractSearchQuery, extractMoveIntent, MODEL_LARGE } from "@/services/ai";
+import { getUnreadEmails, searchEmails, moveEmailsToFolder } from "@/services/google";
 import { getUser, getSoul, getUserProfile, getCurrentContext, updateCurrentContext, updateUserProfile, updateSoul, addMessage, getConversation } from "@/services/db";
 
 function escapeHTML(text: string): string {
@@ -55,8 +55,10 @@ export async function handleMessage(ctx: Context) {
       "get_single_email: el usuario menciona un remitente, empresa, asunto o criterio específico para buscar un email concreto",
       "archive_email: el usuario quiere archivar uno o varios emails especificando un remitente, empresa o criterio",
       "delete_email: el usuario quiere eliminar uno o varios emails especificando un remitente, empresa o criterio",
+      "move_email: el usuario quiere mover uno o varios emails a una carpeta o etiqueta específica",
       "conversation: cualquier otra cosa que no tenga que ver con emails",
     ], MODEL_LARGE);
+    console.log(`[intent] "${text}" → ${intent}`);
     const tokens = JSON.parse(existing.google_token);
 
     const onRefresh = async (newTokens: typeof tokens) => {
@@ -108,7 +110,7 @@ export async function handleMessage(ctx: Context) {
         return;
       } else {
         const summary = await summarizeEmails(user.id, emails);
-        const emailIds = emails.map(e => e.id);
+        const emailIds = emails.map((e) => e.id);
 
         await updateCurrentContext(user.id, { pending_bulk: emailIds });
 
@@ -138,7 +140,7 @@ export async function handleMessage(ctx: Context) {
         const description = emails.length === 1
           ? `el email de <b>${escapeHTML(emails[0]!.from)}</b>`
           : `${emails.length} emails`;
-        const emailIds = emails.map(e => e.id);
+        const emailIds = emails.map((e) => e.id);
 
         await updateCurrentContext(user.id, {
           awaiting: { action: "archive_emails", emailIds, description },
@@ -163,7 +165,6 @@ export async function handleMessage(ctx: Context) {
     } else if (intent === "delete_email") {
       await ctx.sendChatAction("typing");
       const query = await extractSearchQuery(user.id, text);
-      console.log(`[extractSearchQuery] "${text}" → "${query}"`);
       const emails = await searchEmails(tokens, query, onRefresh);
 
       if (emails.length === 0) {
@@ -172,7 +173,7 @@ export async function handleMessage(ctx: Context) {
         const description = emails.length === 1
           ? `el email de <b>${escapeHTML(emails[0]!.from)}</b>`
           : `${emails.length} emails`;
-        const emailIds = emails.map(e => e.id);
+        const emailIds = emails.map((e) => e.id);
 
         await updateCurrentContext(user.id, {
           awaiting: { action: "delete_emails", emailIds, description },
@@ -192,6 +193,44 @@ export async function handleMessage(ctx: Context) {
         await addMessage(user.id, "assistant", msg);
         await updateCurrentContext(user.id, { last_active: new Date().toISOString() });
         return;
+      }
+
+    } else if (intent === "move_email") {
+      await ctx.sendChatAction("typing");
+      const { query, folder } = await extractMoveIntent(user.id, text);
+
+      if (!query || !folder) {
+        finalReply = "No he entendido bien a qué carpeta quieres mover los emails. ¿Puedes especificarlo?";
+      } else {
+        const emails = await searchEmails(tokens, query, onRefresh);
+
+        if (emails.length === 0) {
+          finalReply = "No he encontrado ningún email con esos criterios. 📭";
+        } else {
+          const description = emails.length === 1
+            ? `el email de <b>${escapeHTML(emails[0]!.from)}</b>`
+            : `${emails.length} emails`;
+          const emailIds = emails.map((e) => e.id);
+
+          await updateCurrentContext(user.id, {
+            awaiting: { action: "move_emails", emailIds, folder, description },
+          });
+
+          const msg = `¿Mover ${description} a <b>${escapeHTML(folder)}</b>?`;
+          await ctx.reply(msg, {
+            parse_mode: "HTML",
+            reply_markup: {
+              inline_keyboard: [[
+                { text: "✅ Confirmar", callback_data: "awaiting:confirm" },
+                { text: "❌ Cancelar", callback_data: "awaiting:cancel" },
+              ]],
+            },
+          });
+
+          await addMessage(user.id, "assistant", msg);
+          await updateCurrentContext(user.id, { last_active: new Date().toISOString() });
+          return;
+        }
       }
 
     } else {
