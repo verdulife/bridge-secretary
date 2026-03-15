@@ -1,6 +1,6 @@
 import { getUnreadEmails, labelEmail } from "@/services/google";
 import { classifyEmail, inferLang } from "@/services/ai";
-import { client, enqueue, isEmailQueued, getMessageCount, getProcessedEmailCount, updateUserProfile, getConversation } from "@/services/db";
+import { client, enqueue, isEmailQueued, getMessageCount, getProcessedEmailCount, updateUserProfile, getConversation, cleanOldQueueEntries } from "@/services/db";
 import { sendPendingAlerts } from "@/services/notify";
 
 const INTERVAL = 5 * 60 * 1000; // 5 minutos
@@ -189,6 +189,10 @@ async function runWorker() {
   for (const user of users) {
     await processUser(user);
   }
+
+  // Limpieza de entradas antiguas de la queue
+  const cleaned = await cleanOldQueueEntries();
+  if (cleaned > 0) console.log(`🧹 Queue: ${cleaned} entradas antiguas eliminadas.`);
 }
 
 export function startWorker() {

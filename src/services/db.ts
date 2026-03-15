@@ -247,3 +247,13 @@ export async function getProcessedEmailCount(userId: number): Promise<number> {
   });
   return result.rows[0]?.count as number ?? 0;
 }
+
+export async function cleanOldQueueEntries(): Promise<number> {
+  const result = await client.execute({
+    sql: `DELETE FROM queue
+          WHERE status IN ('done', 'rejected', 'failed')
+          AND updated_at <= datetime('now', '-30 days')`,
+    args: [],
+  });
+  return result.rowsAffected;
+}
