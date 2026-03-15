@@ -1,6 +1,6 @@
 import type { Context } from "telegraf";
-import { chat, inferProfile, interpretIntent, normalizeTimezone, normalizeWorkingHours, isValidIANA, summarizeEmails, extractSearchQuery, extractMoveIntent, MODEL_LARGE } from "@/services/ai";
-import { getUnreadEmails, searchEmails, moveEmailsToFolder } from "@/services/google";
+import { chat, inferProfile, interpretIntent, normalizeTimezone, normalizeWorkingHours, isValidIANA, summarizeEmails, extractSearchQuery, extractMoveIntent, extractFolderName, MODEL_LARGE } from "@/services/ai";
+import { getUnreadEmails, searchEmails, getEmailsFromFolder, getUserFolders, createFolder, deleteFolder } from "@/services/google";
 import { getUser, getSoul, getUserProfile, getCurrentContext, updateCurrentContext, updateUserProfile, updateSoul, addMessage, getConversation } from "@/services/db";
 
 function escapeHTML(text: string): string {
@@ -56,6 +56,10 @@ export async function handleMessage(ctx: Context) {
       "archive_email: el usuario quiere archivar uno o varios emails especificando un remitente, empresa o criterio",
       "delete_email: el usuario quiere eliminar uno o varios emails especificando un remitente, empresa o criterio",
       "move_email: el usuario quiere mover uno o varios emails a una carpeta o etiqueta específica",
+      "get_folder: el usuario quiere ver los emails de una carpeta o etiqueta específica de Gmail",
+      "list_folders: el usuario quiere saber qué carpetas o etiquetas tiene en Gmail",
+      "create_folder: el usuario quiere crear una carpeta o etiqueta nueva en Gmail",
+      "delete_folder: el usuario quiere eliminar una carpeta o etiqueta de Gmail",
       "conversation: cualquier otra cosa que no tenga que ver con emails",
     ], MODEL_LARGE);
     const tokens = JSON.parse(existing.google_token);
@@ -230,6 +234,89 @@ export async function handleMessage(ctx: Context) {
           await updateCurrentContext(user.id, { last_active: new Date().toISOString() });
           return;
         }
+      }
+
+    } else if (intent === "get_folder") {
+      await ctx.sendChatAction("typing");
+      const folder = await extractFolderName(user.id, text);
+
+      if (!folder) {
+        finalReply = "No he entendido qué carpeta quieres ver. ¿Puedes especificarla?";
+      } else {
+        const { emails, resolvedFolder } = await getEmailsFromFolder(tokens, folder, onRefresh);
+
+        if (!resolvedFolder) {
+          finalReply = `No he encontrado ninguna carpeta que coincida con <b>${escapeHTML(folder)}</b>. ¿Es ese el nombre exacto?`;
+        } else if (emails.length === 0) {
+          finalReply = `La carpeta <b>${escapeHTML(resolvedFolder)}</b> está vacía.`;
+        } else {
+          const summary = await summarizeEmails(user.id, emails);
+          await ctx.reply(summary, { parse_mode: "HTML" });
+          await addMessage(user.id, "assistant", summary);
+          await updateCurrentContext(user.id, { last_active: new Date().toISOString() });
+          return;
+        }
+      }
+
+    } else if (intent === "list_folders") {
+      await ctx.sendChatAction("typing");
+      const folders = await getUserFolders(tokens, onRefresh);
+
+      if (folders.length === 0) {
+        finalReply = "No tienes ninguna carpeta personalizada en Gmail.";
+      } else {
+        const list = folders.map((f) => `• <b>${escapeHTML(f.name)}</b> — ${f.count} email${f.count !== 1 ? "s" : ""}`).join("\n");
+        const msg = `Tus carpetas en Gmail:\n\n${list}`;
+        await ctx.reply(msg, { parse_mode: "HTML" });
+        await addMessage(user.id, "assistant", msg);
+        await updateCurrentContext(user.id, { last_active: new Date().toISOString() });
+        return;
+      }
+
+    } else if (intent === "create_folder") {
+      await ctx.sendChatAction("typing");
+      const folder = await extractFolderName(user.id, text);
+
+      if (!folder) {
+        finalReply = "No he entendido el nombre de la carpeta. ¿Puedes especificarlo?";
+      } else {
+        try {
+          await createFolder(tokens, folder, onRefresh);
+          const msg = `Carpeta <b>${escapeHTML(folder)}</b> creada. 📁`;
+          await ctx.reply(msg, { parse_mode: "HTML" });
+          await addMessage(user.id, "assistant", msg);
+          await updateCurrentContext(user.id, { last_active: new Date().toISOString() });
+          return;
+        } catch {
+          finalReply = `No he podido crear la carpeta <b>${escapeHTML(folder)}</b>. Es posible que ya exista.`;
+        }
+      }
+
+    } else if (intent === "delete_folder") {
+      await ctx.sendChatAction("typing");
+      const folder = await extractFolderName(user.id, text);
+
+      if (!folder) {
+        finalReply = "No he entendido qué carpeta quieres eliminar. ¿Puedes especificarla?";
+      } else {
+        await updateCurrentContext(user.id, {
+          awaiting: { action: "delete_folder", folder, description: folder },
+        });
+
+        const msg = `¿Eliminar la carpeta <b>${escapeHTML(folder)}</b>? Los emails que contiene no se borrarán, solo perderán esta etiqueta.`;
+        await ctx.reply(msg, {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [[
+              { text: "✅ Confirmar", callback_data: "awaiting:confirm" },
+              { text: "❌ Cancelar", callback_data: "awaiting:cancel" },
+            ]],
+          },
+        });
+
+        await addMessage(user.id, "assistant", msg);
+        await updateCurrentContext(user.id, { last_active: new Date().toISOString() });
+        return;
       }
 
     } else {

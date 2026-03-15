@@ -1,5 +1,5 @@
 import type { Context } from "telegraf";
-import { archiveEmail, deleteEmail, archiveEmails, deleteEmails, moveEmailsToFolder } from "@/services/google";
+import { archiveEmail, deleteEmail, archiveEmails, deleteEmails, moveEmailsToFolder, deleteFolder } from "@/services/google";
 import { client, getCurrentContext, updateCurrentContext } from "@/services/db";
 
 export async function handleCallback(ctx: Context) {
@@ -82,6 +82,11 @@ export async function handleCallback(ctx: Context) {
               : `${awaiting.emailIds.length} emails movidos a <b>${awaiting.folder}</b>. 📁`,
             { parse_mode: "HTML" }
           );
+        } else if (awaiting.action === "delete_folder" && awaiting.folder) {
+          await deleteFolder(tokens, awaiting.folder);
+          await ctx.answerCbQuery("✅");
+          await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+          await ctx.reply(`Carpeta <b>${awaiting.folder}</b> eliminada. 🗑️`, { parse_mode: "HTML" });
         }
       } catch (err) {
         console.error("❌ Error ejecutando awaiting action:", err);

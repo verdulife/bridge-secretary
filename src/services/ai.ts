@@ -444,3 +444,42 @@ Responde SOLO en JSON: {"lang":"codigo"}`,
     return null;
   }
 }
+
+export async function extractFolderName(
+  userId: number,
+  message: string
+): Promise<string> {
+  const response = await groq.chat.completions.create({
+    model: MODEL_SMALL,
+    temperature: 0,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: `Extrae el nombre de la carpeta o etiqueta de Gmail que menciona el usuario.
+Ejemplos:
+- "dame los emails de la carpeta Gestión" → {"folder":"Gestión"}
+- "qué hay en Facturas" → {"folder":"Facturas"}
+- "muéstrame la carpeta Trabajo" → {"folder":"Trabajo"}
+- "emails archivados" → {"folder":""}
+Responde SOLO en JSON: {"folder":"nombre_carpeta"}`,
+      },
+      { role: "user", content: message },
+    ],
+  });
+
+  await trackUsage(
+    userId,
+    MODEL_SMALL,
+    response.usage?.prompt_tokens ?? 0,
+    response.usage?.completion_tokens ?? 0,
+    "extract_folder_name"
+  );
+
+  try {
+    const result = JSON.parse(response.choices[0]?.message.content ?? "{}");
+    return result.folder ?? "";
+  } catch {
+    return "";
+  }
+}

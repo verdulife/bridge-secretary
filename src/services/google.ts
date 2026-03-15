@@ -327,3 +327,144 @@ export async function moveEmailsToFolder(
     )
   );
 }
+
+function normalizeName(str: string): string {
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+export async function getEmailsFromFolder(
+  tokens: { access_token: string; refresh_token: string; expiry_date: number },
+  folderName: string,
+  onRefresh?: (newTokens: typeof tokens) => void
+): Promise<{
+  emails: {
+    id: string;
+    from: string;
+    subject: string;
+    snippet: string;
+    date: string;
+  }[];
+  resolvedFolder: string | null;
+}> {
+  const gmail = createGmailClient(tokens, onRefresh);
+
+  // Listar todos los labels del usuario
+  const labelsRes = await gmail.users.labels.list({ userId: "me" });
+  const labels = labelsRes.data.labels ?? [];
+
+  // Match fuzzy contra el nombre extraído
+  const normalized = normalizeName(folderName);
+  const match = labels.find((l) => normalizeName(l.name ?? "") === normalized);
+
+  if (!match) {
+    return { emails: [], resolvedFolder: null };
+  }
+
+  const resolvedFolder = match.name!;
+
+  const list = await gmail.users.messages.list({
+    userId: "me",
+    q: `in:${resolvedFolder}`,
+    maxResults: 10,
+  });
+
+  const messages = list.data.messages ?? [];
+  if (messages.length === 0) return { emails: [], resolvedFolder };
+
+  const emails = await Promise.all(
+    messages.map(async (msg) => {
+      const full = await gmail.users.messages.get({
+        userId: "me",
+        id: msg.id!,
+        format: "metadata",
+        metadataHeaders: ["From", "Subject", "Date"],
+      });
+
+      const headers = full.data.payload?.headers ?? [];
+      const get = (name: string) => headers.find((h) => h.name === name)?.value ?? "";
+
+      return {
+        id: msg.id!,
+        from: get("From"),
+        subject: get("Subject"),
+        snippet: full.data.snippet ?? "",
+        date: get("Date"),
+      };
+    })
+  );
+
+  return { emails, resolvedFolder };
+}
+
+export async function getUserFolders(
+  tokens: { access_token: string; refresh_token: string; expiry_date: number },
+  onRefresh?: (newTokens: typeof tokens) => void
+): Promise<{ name: string; count: number }[]> {
+  const gmail = createGmailClient(tokens, onRefresh);
+
+  const labelsRes = await gmail.users.labels.list({ userId: "me" });
+  const labels = labelsRes.data.labels ?? [];
+
+  const SYSTEM_LABELS = [
+    "INBOX", "SENT", "TRASH", "SPAM", "DRAFT", "STARRED", "IMPORTANT",
+    "UNREAD", "PERSONAL", "SOCIAL", "PROMOTIONS", "UPDATES", "FORUMS",
+  ];
+
+  const userLabels = labels.filter((l) =>
+    l.type === "user" &&
+    !SYSTEM_LABELS.includes(l.name ?? "") &&
+    !l.name?.startsWith("CATEGORY_") &&
+    !l.name?.startsWith("Bridge/")
+  );
+
+  const detailed = await Promise.all(
+    userLabels.map(async (l) => {
+      const detail = await gmail.users.labels.get({ userId: "me", id: l.id! });
+      return {
+        name: l.name!,
+        count: detail.data.messagesTotal ?? 0,
+      };
+    })
+  );
+
+  return detailed;
+}
+
+export async function createFolder(
+  tokens: { access_token: string; refresh_token: string; expiry_date: number },
+  folderName: string,
+  onRefresh?: (newTokens: typeof tokens) => void
+): Promise<void> {
+  const gmail = createGmailClient(tokens, onRefresh);
+
+  await gmail.users.labels.create({
+    userId: "me",
+    requestBody: {
+      name: folderName,
+      labelListVisibility: "labelShow",
+      messageListVisibility: "show",
+    },
+  });
+}
+
+export async function deleteFolder(
+  tokens: { access_token: string; refresh_token: string; expiry_date: number },
+  folderName: string,
+  onRefresh?: (newTokens: typeof tokens) => void
+): Promise<void> {
+  const gmail = createGmailClient(tokens, onRefresh);
+
+  const labelsRes = await gmail.users.labels.list({ userId: "me" });
+  const labels = labelsRes.data.labels ?? [];
+
+  const normalized = normalizeName(folderName);
+  const match = labels.find((l) => normalizeName(l.name ?? "") === normalized);
+
+  if (!match?.id) throw new Error(`Carpeta "${folderName}" no encontrada`);
+
+  await gmail.users.labels.delete({ userId: "me", id: match.id });
+}
