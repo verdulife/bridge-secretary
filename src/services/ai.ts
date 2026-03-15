@@ -95,9 +95,14 @@ Responde SOLO en JSON: {"summary":"resumen en una frase","category":"attention|p
 
 export async function summarizeEmails(
   userId: number,
-  emails: { from: string; subject: string; snippet: string }[]
+  emails: { from: string; subject: string; snippet: string; location?: string }[]
 ): Promise<string> {
-  const emailList = emails.map((e, i) => `${i + 1}. De: ${e.from} | Asunto: ${e.subject} | ${e.snippet}`).join("\n");
+  const emailList = emails
+    .map((e, i) => {
+      const loc = e.location ? ` | Ubicación: ${e.location}` : "";
+      return `${i + 1}. De: ${e.from} | Asunto: ${e.subject} | ${e.snippet}${loc}`;
+    })
+    .join("\n");
 
   const response = await groq.chat.completions.create({
     model: MODEL_LARGE,
@@ -118,10 +123,12 @@ Usa listas solo si hay 3 o más elementos distintos que el usuario necesite dist
 
 Los emojis son bienvenidos si refuerzan el tono natural, pero con criterio: uno o dos por respuesta máximo, nunca uno por frase.
 
-Ejemplo de tono: "Tienes un par de alertas de <b>Ahrefs</b> sobre tus sitios web y varios emails de Temu con ofertas."`
+Cuando un email tenga ubicación indicada, menciona dónde está de forma natural al final del mensaje. Ejemplo: "He encontrado el email de <b>Pedro</b> sobre el contrato guardado en <b>Enviados</b>."
+
+Ejemplo de tono: "Tienes un par de alertas de <b>Ahrefs</b> sobre tus sitios web y varios emails de Temu con ofertas."`,
       },
-      { role: "user", content: emailList }
-    ]
+      { role: "user", content: emailList },
+    ],
   });
 
   await trackUsage(
@@ -314,7 +321,21 @@ export async function extractSearchQuery(
       {
         role: "system",
         content: `Extrae una query de búsqueda para Gmail a partir del mensaje del usuario.
-Ejemplos: "emails de Ahrefs" → "from:ahrefs", "último email de Temu" → "from:temu", "emails sobre factura" → "subject:factura".
+
+Reglas:
+- Usa from: solo cuando el usuario mencione un remitente, empresa o persona concreta
+- Para cualquier otro criterio (asunto, tema, contenido) usa palabras sueltas sin prefijos — Gmail busca automáticamente en todo el email
+- Puedes combinar ambos: "email de Pedro sobre el contrato" → "from:pedro contrato"
+- NUNCA añadas filtros de ubicación, etiquetas o carpetas: nada de -label:, in:inbox, in:trash, label:, etc.
+- La query debe ser lo más simple y amplia posible para maximizar resultados
+
+Ejemplos:
+- "emails de Ahrefs" → "from:ahrefs"
+- "emails de Temu con ofertas" → "from:temu ofertas"
+- "emails sobre facturas" → "facturas"
+- "email de Pedro sobre el contrato" → "from:pedro contrato"
+- "algún email sobre la reunión del lunes" → "reunión lunes"
+
 Responde SOLO en JSON: {"query":"gmail_search_query"}`
       },
       { role: "user", content: message }

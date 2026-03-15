@@ -6,9 +6,9 @@ export async function handleCallback(ctx: Context) {
   const data = (ctx.callbackQuery as any)?.data as string;
   if (!data) return;
 
-  const [action, emailId] = data.split(":");
+  const [action, param] = data.split(":");
 
-  if (!action || !emailId) {
+  if (!action) {
     await ctx.answerCbQuery("Acción no válida.");
     return;
   }
@@ -28,14 +28,75 @@ export async function handleCallback(ctx: Context) {
 
   const tokens = JSON.parse(googleToken);
 
+  // Confirmaciones awaiting
+  if (action === "awaiting") {
+    const context = await getCurrentContext(userId);
+    const awaiting = context.awaiting as {
+      action: string;
+      emailIds: string[];
+      description: string;
+    } | null;
+
+    if (!awaiting) {
+      await ctx.answerCbQuery("No hay ninguna acción pendiente.");
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+      return;
+    }
+
+    if (param === "cancel") {
+      await updateCurrentContext(userId, { awaiting: null });
+      await ctx.answerCbQuery("Cancelado.");
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+      await ctx.reply("Cancelado. ¿Algo más?");
+      return;
+    }
+
+    if (param === "confirm") {
+      try {
+        if (awaiting.action === "archive_emails") {
+          await archiveEmails(tokens, awaiting.emailIds);
+          await ctx.answerCbQuery("✅");
+          await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+          await ctx.reply(
+            awaiting.emailIds.length === 1
+              ? "Archivado. 📦"
+              : `${awaiting.emailIds.length} emails archivados. 📦`
+          );
+        } else if (awaiting.action === "delete_emails") {
+          await deleteEmails(tokens, awaiting.emailIds);
+          await ctx.answerCbQuery("✅");
+          await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+          await ctx.reply(
+            awaiting.emailIds.length === 1
+              ? "Eliminado. 🗑️"
+              : `${awaiting.emailIds.length} emails eliminados. 🗑️`
+          );
+        }
+      } catch (err) {
+        console.error("❌ Error ejecutando awaiting action:", err);
+        await ctx.answerCbQuery("Ha ocurrido un error.");
+        await ctx.reply("No he podido completar la acción. Inténtalo de nuevo.");
+      } finally {
+        await updateCurrentContext(userId, { awaiting: null });
+      }
+    }
+    return;
+  }
+
+  // Botones inline individuales
+  if (!param) {
+    await ctx.answerCbQuery("Acción no válida.");
+    return;
+  }
+
   try {
     if (action === "archive") {
-      await archiveEmail(tokens, emailId);
+      await archiveEmail(tokens, param);
       await ctx.answerCbQuery("✅");
       await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
       await ctx.reply("Archivado. 📦");
     } else if (action === "delete") {
-      await deleteEmail(tokens, emailId);
+      await deleteEmail(tokens, param);
       await ctx.answerCbQuery("✅");
       await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
       await ctx.reply("Eliminado. 🗑️");
@@ -46,6 +107,7 @@ export async function handleCallback(ctx: Context) {
     await ctx.reply("No he podido completar la acción. Inténtalo de nuevo.");
   }
 
+  // Acciones en masa
   if (action === "bulk") {
     const context = await getCurrentContext(userId);
     const emailIds = context.pending_bulk as string[] | null;
@@ -56,12 +118,12 @@ export async function handleCallback(ctx: Context) {
     }
 
     try {
-      if (emailId === "archive") {
+      if (param === "archive") {
         await archiveEmails(tokens, emailIds);
         await ctx.answerCbQuery("✅");
         await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
         await ctx.reply(`${emailIds.length} emails archivados. 📦`);
-      } else if (emailId === "delete") {
+      } else if (param === "delete") {
         await deleteEmails(tokens, emailIds);
         await ctx.answerCbQuery("✅");
         await ctx.editMessageReplyMarkup({ inline_keyboard: [] });

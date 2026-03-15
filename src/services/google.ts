@@ -183,41 +183,79 @@ export async function searchEmails(
   subject: string;
   snippet: string;
   date: string;
+  location?: string;
 }[]> {
   const gmail = createGmailClient(tokens, onRefresh);
 
-  const list = await gmail.users.messages.list({
-    userId: "me",
-    q: query,
-    maxResults: 5,
-  });
+  const SYSTEM_LABELS: Record<string, string> = {
+    INBOX: "bandeja de entrada",
+    SENT: "enviados",
+    TRASH: "papelera",
+    SPAM: "spam",
+    DRAFT: "borradores",
+    STARRED: "destacados",
+    IMPORTANT: "importantes",
+  };
 
-  const messages = list.data.messages ?? [];
-  if (messages.length === 0) return [];
+  async function fetchEmails(q: string) {
+    const list = await gmail.users.messages.list({
+      userId: "me",
+      q,
+      maxResults: 5,
+    });
 
-  const emails = await Promise.all(
-    messages.map(async (msg) => {
-      const full = await gmail.users.messages.get({
-        userId: "me",
-        id: msg.id!,
-        format: "metadata",
-        metadataHeaders: ["From", "Subject", "Date"],
-      });
+    const messages = list.data.messages ?? [];
+    if (messages.length === 0) return [];
 
-      const headers = full.data.payload?.headers ?? [];
-      const get = (name: string) => headers.find(h => h.name === name)?.value ?? "";
+    return await Promise.all(
+      messages.map(async (msg) => {
+        const full = await gmail.users.messages.get({
+          userId: "me",
+          id: msg.id!,
+          format: "metadata",
+          metadataHeaders: ["From", "Subject", "Date"],
+        });
 
-      return {
-        id: msg.id!,
-        from: get("From"),
-        subject: get("Subject"),
-        snippet: full.data.snippet ?? "",
-        date: get("Date"),
-      };
-    })
-  );
+        const headers = full.data.payload?.headers ?? [];
+        const get = (name: string) => headers.find((h) => h.name === name)?.value ?? "";
+        const labelIds = full.data.labelIds ?? [];
 
-  return emails;
+        // Detectar ubicación
+        let location: string | undefined;
+        if (!labelIds.includes("INBOX")) {
+          const systemKeys = Object.keys(SYSTEM_LABELS);
+          const customLabel = labelIds.find((l) => !systemKeys.includes(l) && !l.startsWith("CATEGORY_") && !l.startsWith("Bridge/"));
+          if (customLabel) {
+            try {
+              const labelRes = await gmail.users.labels.get({ userId: "me", id: customLabel });
+              location = labelRes.data.name ?? "fuera de tu bandeja de entrada";
+            } catch {
+              location = "fuera de tu bandeja de entrada";
+            }
+          } else {
+            const found = labelIds.find((l) => SYSTEM_LABELS[l]);
+            location = found ? SYSTEM_LABELS[found] : "fuera de tu bandeja de entrada";
+          }
+        }
+
+        return {
+          id: msg.id!,
+          from: get("From"),
+          subject: get("Subject"),
+          snippet: full.data.snippet ?? "",
+          date: get("Date"),
+          location,
+        };
+      })
+    );
+  }
+
+  // Paso 1: buscar en inbox
+  const inboxResults = await fetchEmails(`in:inbox ${query}`);
+  if (inboxResults.length > 0) return inboxResults;
+
+  // Paso 2: buscar en cualquier lugar
+  return await fetchEmails(query);
 }
 
 export async function archiveEmails(

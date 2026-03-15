@@ -1,6 +1,6 @@
 import type { Context } from "telegraf";
 import { chat, inferProfile, interpretIntent, normalizeTimezone, normalizeWorkingHours, isValidIANA, summarizeEmails, extractSearchQuery, MODEL_LARGE } from "@/services/ai";
-import { getUnreadEmails, searchEmails, archiveEmail, deleteEmail } from "@/services/google";
+import { getUnreadEmails, searchEmails } from "@/services/google";
 import { getUser, getSoul, getUserProfile, getCurrentContext, updateCurrentContext, updateUserProfile, updateSoul, addMessage, getConversation } from "@/services/db";
 
 function escapeHTML(text: string): string {
@@ -53,9 +53,10 @@ export async function handleMessage(ctx: Context) {
     const intent = await interpretIntent(user.id, text, [
       "get_emails: el usuario quiere ver o listar sus emails recientes sin especificar remitente ni asunto concreto",
       "get_single_email: el usuario menciona un remitente, empresa, asunto o criterio específico para buscar un email concreto",
+      "archive_email: el usuario quiere archivar uno o varios emails especificando un remitente, empresa o criterio",
+      "delete_email: el usuario quiere eliminar uno o varios emails especificando un remitente, empresa o criterio",
       "conversation: cualquier otra cosa que no tenga que ver con emails",
     ], MODEL_LARGE);
-    console.log(`[intent] "${text}" → ${intent}`);
     const tokens = JSON.parse(existing.google_token);
 
     const onRefresh = async (newTokens: typeof tokens) => {
@@ -106,7 +107,6 @@ export async function handleMessage(ctx: Context) {
         await updateCurrentContext(user.id, { last_active: new Date().toISOString() });
         return;
       } else {
-        // Múltiples emails del mismo criterio → botones en masa
         const summary = await summarizeEmails(user.id, emails);
         const emailIds = emails.map(e => e.id);
 
@@ -126,6 +126,74 @@ export async function handleMessage(ctx: Context) {
         await updateCurrentContext(user.id, { last_active: new Date().toISOString() });
         return;
       }
+
+    } else if (intent === "archive_email") {
+      await ctx.sendChatAction("typing");
+      const query = await extractSearchQuery(user.id, text);
+      const emails = await searchEmails(tokens, query, onRefresh);
+
+      if (emails.length === 0) {
+        finalReply = "No he encontrado ningún email con esos criterios. 📭";
+      } else {
+        const description = emails.length === 1
+          ? `el email de <b>${escapeHTML(emails[0]!.from)}</b>`
+          : `${emails.length} emails`;
+        const emailIds = emails.map(e => e.id);
+
+        await updateCurrentContext(user.id, {
+          awaiting: { action: "archive_emails", emailIds, description },
+        });
+
+        const msg = `¿Archivar ${description}?`;
+        await ctx.reply(msg, {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [[
+              { text: "✅ Confirmar", callback_data: "awaiting:confirm" },
+              { text: "❌ Cancelar", callback_data: "awaiting:cancel" },
+            ]],
+          },
+        });
+
+        await addMessage(user.id, "assistant", msg);
+        await updateCurrentContext(user.id, { last_active: new Date().toISOString() });
+        return;
+      }
+
+    } else if (intent === "delete_email") {
+      await ctx.sendChatAction("typing");
+      const query = await extractSearchQuery(user.id, text);
+      console.log(`[extractSearchQuery] "${text}" → "${query}"`);
+      const emails = await searchEmails(tokens, query, onRefresh);
+
+      if (emails.length === 0) {
+        finalReply = "No he encontrado ningún email con esos criterios. 📭";
+      } else {
+        const description = emails.length === 1
+          ? `el email de <b>${escapeHTML(emails[0]!.from)}</b>`
+          : `${emails.length} emails`;
+        const emailIds = emails.map(e => e.id);
+
+        await updateCurrentContext(user.id, {
+          awaiting: { action: "delete_emails", emailIds, description },
+        });
+
+        const msg = `¿Eliminar ${description}?`;
+        await ctx.reply(msg, {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [[
+              { text: "✅ Confirmar", callback_data: "awaiting:confirm" },
+              { text: "❌ Cancelar", callback_data: "awaiting:cancel" },
+            ]],
+          },
+        });
+
+        await addMessage(user.id, "assistant", msg);
+        await updateCurrentContext(user.id, { last_active: new Date().toISOString() });
+        return;
+      }
+
     } else {
       finalReply = await chat(user.id, text, history, soul, profile, context);
     }
