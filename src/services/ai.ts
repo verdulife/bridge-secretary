@@ -4,8 +4,8 @@ import { trackUsage } from "@/services/db";
 
 const groq = new Groq({ apiKey: Bun.env.GROQ_API_KEY });
 
-const MODEL_LARGE = "llama-3.3-70b-versatile";
-const MODEL_SMALL = "llama-3.1-8b-instant";
+export const MODEL_LARGE = "llama-3.3-70b-versatile";
+export const MODEL_SMALL = "llama-3.1-8b-instant";
 
 function buildSystemPrompt(soul: Record<string, any>, profile: Record<string, any>, context: Record<string, any>, instructions: string): string {
   const now = new Date().toLocaleString("es-ES");
@@ -108,8 +108,17 @@ export async function summarizeEmails(
         content: `Eres un asistente personal que resume emails de forma natural y conversacional.
 Agrupa los emails similares y presenta un resumen breve y amigable como si se lo contaras a un amigo.
 Máximo 3-4 líneas en total. No listes todos los detalles, solo lo más relevante.
-Ejemplo de tono: "Tienes un par de alertas de Ahrefs sobre tus sitios web y varios emails de Temu con ofertas."
-PROHIBIDO usar Markdown o asteriscos. Sin listas ni bullets. Usa solo texto natural.`
+
+El texto se mostrará en Telegram, principalmente en móvil. Usa HTML cuando aporte claridad semántica real:
+- <b> para destacar un nombre propio o dato clave
+- <i> para matices o aclaraciones
+Nunca uses formato para decorar. Sin Markdown, sin asteriscos.
+
+Usa listas solo si hay 3 o más elementos distintos que el usuario necesite distinguir individualmente, y únicamente si cada ítem cabe en una línea corta. Si algún punto requiere más desarrollo, usa prosa.
+
+Los emojis son bienvenidos si refuerzan el tono natural, pero con criterio: uno o dos por respuesta máximo, nunca uno por frase.
+
+Ejemplo de tono: "Tienes un par de alertas de <b>Ahrefs</b> sobre tus sitios web y varios emails de Temu con ofertas."`
       },
       { role: "user", content: emailList }
     ]
@@ -123,7 +132,17 @@ PROHIBIDO usar Markdown o asteriscos. Sin listas ni bullets. Usa solo texto natu
     "summarize_emails"
   );
 
-  return response.choices[0]?.message.content ?? "No he podido resumir los correos.";
+  const raw = response.choices[0]?.message.content ?? "No he podido resumir los correos.";
+
+  const formatted = raw
+    .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")  // **negrita**
+    .replace(/\*([^*]+)\*/g, "<b>$1</b>")       // *negrita* (estilo Llama)
+    .replace(/_{2}([^_]+)_{2}/g, "<b>$1</b>")  // __negrita__
+    .replace(/_([^_]+)_/g, "<i>$1</i>")         // _cursiva_
+    .replace(/`([^`]+)`/g, "<code>$1</code>")   // `código`
+    .trim();
+
+  return formatted;
 }
 
 export async function inferProfile(
@@ -173,17 +192,22 @@ Responde SOLO en JSON: {"soul":{},"profile":{}}`
 export async function interpretIntent(
   userId: number,
   message: string,
-  options: string[]
+  options: string[],
+  model: string = MODEL_SMALL
 ): Promise<string> {
   const response = await groq.chat.completions.create({
-    model: MODEL_SMALL,
+    model,
     temperature: 0.1,
     response_format: { type: "json_object" },
     messages: [
       {
         role: "system",
-        content: `Clasifica este mensaje en una de estas opciones: ${options.join(", ")}.
-Responde SOLO en JSON: {"intent":"opcion"}`
+        content: `Tu tarea es clasificar un mensaje en exactamente una de estas opciones:
+
+${options.map((o, i) => `${i + 1}. ${o}`).join("\n")}
+
+Devuelve SOLO la clave exacta que aparece antes del ":" (si la hay), o la opción exacta tal cual si no tiene ":".
+Responde ÚNICAMENTE en JSON sin texto adicional: {"intent":"clave_exacta"}`
       },
       { role: "user", content: message }
     ]

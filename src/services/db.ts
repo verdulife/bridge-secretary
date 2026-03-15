@@ -211,9 +211,20 @@ export async function updateQueueStatus(
 }
 
 export async function isEmailQueued(userId: number, emailId: string): Promise<boolean> {
+  // Busca el email_id tanto en alertas individuales ($.email_id)
+  // como en resúmenes informativos/spam ($.emails[*].id)
   const result = await client.execute({
-    sql: `SELECT id FROM queue WHERE user_id = ? AND json_extract(payload, '$.email_id') = ?`,
-    args: [userId, emailId],
+    sql: `SELECT id FROM queue
+          WHERE user_id = ?
+          AND status NOT IN ('done', 'rejected', 'failed')
+          AND (
+            json_extract(payload, '$.email_id') = ?
+            OR EXISTS (
+              SELECT 1 FROM json_each(json_extract(payload, '$.emails'))
+              WHERE json_extract(value, '$.id') = ?
+            )
+          )`,
+    args: [userId, emailId, emailId],
   });
   return result.rows.length > 0;
 }

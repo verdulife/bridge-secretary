@@ -1,5 +1,5 @@
 import type { Context } from "telegraf";
-import { chat, inferProfile, interpretIntent, normalizeTimezone, normalizeWorkingHours, isValidIANA, summarizeEmails, extractSearchQuery } from "@/services/ai";
+import { chat, inferProfile, interpretIntent, normalizeTimezone, normalizeWorkingHours, isValidIANA, summarizeEmails, extractSearchQuery, MODEL_LARGE } from "@/services/ai";
 import { getUnreadEmails, searchEmails, archiveEmail, deleteEmail } from "@/services/google";
 import { getUser, getSoul, getUserProfile, getCurrentContext, updateCurrentContext, updateUserProfile, updateSoul, addMessage, getConversation } from "@/services/db";
 
@@ -50,7 +50,12 @@ export async function handleMessage(ctx: Context) {
   let finalReply: string;
 
   if (existing.google_token) {
-    const intent = await interpretIntent(user.id, text, ["get_emails", "get_single_email", "conversation"]);
+    const intent = await interpretIntent(user.id, text, [
+      "get_emails: el usuario quiere ver o listar sus emails recientes sin especificar remitente ni asunto concreto",
+      "get_single_email: el usuario menciona un remitente, empresa, asunto o criterio específico para buscar un email concreto",
+      "conversation: cualquier otra cosa que no tenga que ver con emails",
+    ], MODEL_LARGE);
+    console.log(`[intent] "${text}" → ${intent}`);
     const tokens = JSON.parse(existing.google_token);
 
     const onRefresh = async (newTokens: typeof tokens) => {
@@ -68,7 +73,11 @@ export async function handleMessage(ctx: Context) {
       if (emails.length === 0) {
         finalReply = "No tienes emails nuevos sin revisar. 📭";
       } else {
-        finalReply = await summarizeEmails(user.id, emails);
+        const summary = await summarizeEmails(user.id, emails);
+        await ctx.reply(summary, { parse_mode: "HTML" });
+        await addMessage(user.id, "assistant", summary);
+        await updateCurrentContext(user.id, { last_active: new Date().toISOString() });
+        return;
       }
 
     } else if (intent === "get_single_email") {
@@ -82,7 +91,7 @@ export async function handleMessage(ctx: Context) {
         const email = emails[0]!;
         const summary = await summarizeEmails(user.id, [email]);
 
-        await ctx.reply(escapeHTML(summary), {
+        await ctx.reply(summary, {
           parse_mode: "HTML",
           reply_markup: {
             inline_keyboard: [[
@@ -103,7 +112,7 @@ export async function handleMessage(ctx: Context) {
 
         await updateCurrentContext(user.id, { pending_bulk: emailIds });
 
-        await ctx.reply(escapeHTML(summary), {
+        await ctx.reply(summary, {
           parse_mode: "HTML",
           reply_markup: {
             inline_keyboard: [[

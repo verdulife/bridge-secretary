@@ -71,7 +71,10 @@ function getNextWorkdayStart(profile: Record<string, any>): Date {
   const month = Number(parts.find(p => p.type === "month")?.value) - 1;
   const day = Number(parts.find(p => p.type === "day")?.value);
 
-  return new Date(Date.UTC(year, month, day, startH - (tz === "Europe/Madrid" ? 1 : 0), startM));
+  // Encontrar el timestamp UTC que corresponde a startH:startM en la zona del usuario
+  const candidate = Date.UTC(year, month, day, startH, startM);
+  const offsetMs = new Date(candidate).getTime() - new Date(new Date(candidate).toLocaleString("en-US", { timeZone: tz })).getTime();
+  return new Date(candidate + offsetMs);
 }
 
 async function processUser(user: { id: number; google_token: string | null; user_profile: string }) {
