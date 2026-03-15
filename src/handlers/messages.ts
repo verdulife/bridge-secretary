@@ -78,8 +78,8 @@ export async function handleMessage(ctx: Context) {
 
       if (emails.length === 0) {
         finalReply = "No he encontrado ningún email con esos criterios. 📭";
-      } else {
-        const email = emails[0];
+      } else if (emails.length === 1) {
+        const email = emails[0]!;
         const summary = await summarizeEmails(user.id, [email]);
 
         await ctx.reply(escapeHTML(summary), {
@@ -96,8 +96,27 @@ export async function handleMessage(ctx: Context) {
         await addMessage(user.id, "assistant", summary);
         await updateCurrentContext(user.id, { last_active: new Date().toISOString() });
         return;
-      }
+      } else {
+        // Múltiples emails del mismo criterio → botones en masa
+        const summary = await summarizeEmails(user.id, emails);
+        const emailIds = emails.map(e => e.id);
 
+        await updateCurrentContext(user.id, { pending_bulk: emailIds });
+
+        await ctx.reply(escapeHTML(summary), {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [[
+              { text: "📦 Archivar todos", callback_data: "bulk:archive" },
+              { text: "🗑️ Eliminar todos", callback_data: "bulk:delete" },
+            ]],
+          },
+        });
+
+        await addMessage(user.id, "assistant", summary);
+        await updateCurrentContext(user.id, { last_active: new Date().toISOString() });
+        return;
+      }
     } else {
       finalReply = await chat(user.id, text, history, soul, profile, context);
     }

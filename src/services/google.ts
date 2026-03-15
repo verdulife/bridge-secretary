@@ -219,3 +219,29 @@ export async function searchEmails(
 
   return emails;
 }
+
+export async function archiveEmails(
+  tokens: { access_token: string; refresh_token: string; expiry_date: number },
+  emailIds: string[],
+  onRefresh?: (newTokens: typeof tokens) => void
+): Promise<void> {
+  const gmail = createGmailClient(tokens, onRefresh);
+  await Promise.all(emailIds.map(id =>
+    gmail.users.messages.modify({
+      userId: "me",
+      id,
+      requestBody: { removeLabelIds: ["INBOX"] },
+    })
+  ));
+}
+
+export async function deleteEmails(
+  tokens: { access_token: string; refresh_token: string; expiry_date: number },
+  emailIds: string[],
+  onRefresh?: (newTokens: typeof tokens) => void
+): Promise<void> {
+  const gmail = createGmailClient(tokens, onRefresh);
+  await Promise.all(emailIds.map(id =>
+    gmail.users.messages.trash({ userId: "me", id })
+  ));
+}

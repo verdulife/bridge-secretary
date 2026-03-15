@@ -1,6 +1,6 @@
 import type { Context } from "telegraf";
-import { archiveEmail, deleteEmail } from "@/services/google";
-import { client } from "@/services/db";
+import { archiveEmail, deleteEmail, archiveEmails, deleteEmails } from "@/services/google";
+import { client, getCurrentContext, updateCurrentContext } from "@/services/db";
 
 export async function handleCallback(ctx: Context) {
   const data = (ctx.callbackQuery as any)?.data as string;
@@ -28,13 +28,50 @@ export async function handleCallback(ctx: Context) {
 
   const tokens = JSON.parse(googleToken);
 
-  if (action === "archive") {
-    await archiveEmail(tokens, emailId);
-    await ctx.answerCbQuery("Email archivado. ✅");
-    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
-  } else if (action === "delete") {
-    await deleteEmail(tokens, emailId);
-    await ctx.answerCbQuery("Email eliminado. 🗑️");
-    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+  try {
+    if (action === "archive") {
+      await archiveEmail(tokens, emailId);
+      await ctx.answerCbQuery("✅");
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+      await ctx.reply("Archivado. 📦");
+    } else if (action === "delete") {
+      await deleteEmail(tokens, emailId);
+      await ctx.answerCbQuery("✅");
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+      await ctx.reply("Eliminado. 🗑️");
+    }
+  } catch (err) {
+    console.error("❌ Error en callback:", err);
+    await ctx.answerCbQuery("Ha ocurrido un error.");
+    await ctx.reply("No he podido completar la acción. Inténtalo de nuevo.");
+  }
+
+  if (action === "bulk") {
+    const context = await getCurrentContext(userId);
+    const emailIds = context.pending_bulk as string[] | null;
+
+    if (!emailIds || emailIds.length === 0) {
+      await ctx.answerCbQuery("No hay emails pendientes.");
+      return;
+    }
+
+    try {
+      if (emailId === "archive") {
+        await archiveEmails(tokens, emailIds);
+        await ctx.answerCbQuery("✅");
+        await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+        await ctx.reply(`${emailIds.length} emails archivados. 📦`);
+      } else if (emailId === "delete") {
+        await deleteEmails(tokens, emailIds);
+        await ctx.answerCbQuery("✅");
+        await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+        await ctx.reply(`${emailIds.length} emails eliminados. 🗑️`);
+      }
+      await updateCurrentContext(userId, { pending_bulk: null });
+    } catch (err) {
+      console.error("❌ Error en bulk action:", err);
+      await ctx.answerCbQuery("Ha ocurrido un error.");
+      await ctx.reply("No he podido completar la acción. Inténtalo de nuevo.");
+    }
   }
 }
