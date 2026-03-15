@@ -32,7 +32,11 @@ export function updateProfile(data: { soul?: Record<string, any>; profile?: Reco
 }
 
 export function getUsage() {
-  return request<{ total_input: number; total_output: number; by_task: Record<string, number> }>("/api/panel/usage");
+  return request<{
+    total_input: number;
+    total_output: number;
+    by_task: Record<string, { calls: number; input: number; output: number }>;
+  }>("/api/panel/usage");
 }
 
 export function deleteAccount() {

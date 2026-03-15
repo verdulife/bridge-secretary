@@ -48,25 +48,32 @@ export async function handlePanel(req: Request): Promise<Response> {
   // GET /panel/usage
   if (path === "/api/panel/usage" && req.method === "GET") {
     const result = await client.execute({
-      sql: `SELECT 
-              SUM(input_tokens) as total_input,
-              SUM(output_tokens) as total_output,
+      sql: `SELECT
               task,
-              COUNT(*) as calls
-            FROM usage 
+              COUNT(*) as calls,
+              SUM(input_tokens) as input_tokens,
+              SUM(output_tokens) as output_tokens
+            FROM usage
             WHERE user_id = ?
-            GROUP BY task`,
+            GROUP BY task
+            ORDER BY (SUM(input_tokens) + SUM(output_tokens)) DESC`,
       args: [userId],
     });
 
-    const by_task: Record<string, number> = {};
     let total_input = 0;
     let total_output = 0;
+    const by_task: Record<string, { calls: number; input: number; output: number }> = {};
 
     for (const row of result.rows) {
-      by_task[row.task as string] = row.calls as number;
-      total_input += row.total_input as number;
-      total_output += row.total_output as number;
+      const input = row.input_tokens as number;
+      const output = row.output_tokens as number;
+      by_task[row.task as string] = {
+        calls: row.calls as number,
+        input,
+        output,
+      };
+      total_input += input;
+      total_output += output;
     }
 
     return Response.json({ total_input, total_output, by_task });
