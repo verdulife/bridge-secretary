@@ -382,13 +382,23 @@ async function handleOnboarding(ctx: Context, userId: number, text: string, soul
   }
 
   if (step === "hl") {
-    const intent = await interpretIntent(userId, text, ["confirm", "custom"]);
+    const intent = await interpretIntent(userId, text, [
+      "confirm: el usuario acepta el horario por defecto de 09:00 a 18:00",
+      "custom: el usuario indica un horario diferente con horas concretas",
+    ], MODEL_LARGE);
+
     if (intent === "custom") {
       const hl = await normalizeWorkingHours(userId, text);
+      const isValid = /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(hl);
+      if (!isValid) {
+        await ctx.reply(`No he podido entender ese horario. ¿Puedes escribirlo de otra forma? Por ejemplo: "de 9 a 18" o "8:30 a 17:00".`);
+        return true;
+      }
       await updateUserProfile(userId, { hl, _confirmed: ["tz", "hl"] });
     } else {
       await updateUserProfile(userId, { hl: "09:00-18:00", _confirmed: ["tz", "hl"] });
     }
+
     await ctx.reply(`¡Todo listo! Ya puedo empezar a ayudarte. 🎉\n\nPuedes vincular tu cuenta de Google desde tu Panel.`);
     await updateCurrentContext(userId, { onboarding_step: "complete" });
     return true;
