@@ -58,7 +58,6 @@ export async function handleMessage(ctx: Context) {
       "move_email: el usuario quiere mover uno o varios emails a una carpeta o etiqueta específica",
       "conversation: cualquier otra cosa que no tenga que ver con emails",
     ], MODEL_LARGE);
-    console.log(`[intent] "${text}" → ${intent}`);
     const tokens = JSON.parse(existing.google_token);
 
     const onRefresh = async (newTokens: typeof tokens) => {

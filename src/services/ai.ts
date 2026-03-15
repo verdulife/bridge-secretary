@@ -401,3 +401,46 @@ Responde SOLO en JSON: {"query":"gmail_search_query","folder":"nombre_carpeta"}`
     return { query: "", folder: "" };
   }
 }
+
+export async function inferLang(
+  userId: number,
+  messages: { role: string; content: string }[]
+): Promise<string | null> {
+  if (messages.length < 3) return null;
+
+  const sample = messages
+    .filter((m) => m.role === "user")
+    .slice(-5)
+    .map((m) => m.content)
+    .join("\n");
+
+  const response = await groq.chat.completions.create({
+    model: MODEL_SMALL,
+    temperature: 0,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: `Detecta el idioma principal de estos mensajes y devuelve su código BCP 47.
+Ejemplos: español → "es", inglés → "en", catalán → "ca", francés → "fr".
+Responde SOLO en JSON: {"lang":"codigo"}`,
+      },
+      { role: "user", content: sample },
+    ],
+  });
+
+  await trackUsage(
+    userId,
+    MODEL_SMALL,
+    response.usage?.prompt_tokens ?? 0,
+    response.usage?.completion_tokens ?? 0,
+    "infer_lang"
+  );
+
+  try {
+    const result = JSON.parse(response.choices[0]?.message.content ?? "{}");
+    return result.lang ?? null;
+  } catch {
+    return null;
+  }
+}

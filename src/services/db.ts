@@ -228,3 +228,22 @@ export async function isEmailQueued(userId: number, emailId: string): Promise<bo
   });
   return result.rows.length > 0;
 }
+
+export async function getMessageCount(userId: number): Promise<number> {
+  const result = await client.execute({
+    sql: `SELECT COUNT(*) as count FROM conversations
+          WHERE user_id = ?`,
+    args: [userId],
+  });
+  return result.rows[0]?.count as number ?? 0;
+}
+
+export async function getProcessedEmailCount(userId: number): Promise<number> {
+  const result = await client.execute({
+    sql: `SELECT COUNT(*) as count FROM queue
+          WHERE user_id = ? AND type = 'alert'
+          AND created_at >= datetime('now', '-7 days')`,
+    args: [userId],
+  });
+  return result.rows[0]?.count as number ?? 0;
+}

@@ -1,6 +1,6 @@
 import { getUnreadEmails, labelEmail } from "@/services/google";
-import { classifyEmail } from "@/services/ai";
-import { client, enqueue, isEmailQueued } from "@/services/db";
+import { classifyEmail, inferLang } from "@/services/ai";
+import { client, enqueue, isEmailQueued, getMessageCount, getProcessedEmailCount, updateUserProfile, getConversation } from "@/services/db";
 import { sendPendingAlerts } from "@/services/notify";
 
 const INTERVAL = 5 * 60 * 1000; // 5 minutos
@@ -77,6 +77,38 @@ function getNextWorkdayStart(profile: Record<string, any>): Date {
   return new Date(candidate + offsetMs);
 }
 
+async function validateProfile(userId: number, profile: Record<string, any>): Promise<void> {
+  const updates: Record<string, any> = {};
+
+  // Inferir lang con IA si está vacío
+  if (!profile.lang) {
+    const messages = await getConversation(userId);
+    const lang = await inferLang(userId, messages);
+    if (lang) updates.lang = lang;
+  }
+
+  // Inferir response_speed sin IA si está vacío
+  if (!profile.response_speed) {
+    const msgCount = await getMessageCount(userId);
+    if (msgCount >= 3) {
+      updates.response_speed = msgCount >= 20 ? "active" : "relaxed";
+    }
+  }
+
+  // Inferir notification_sensitivity sin IA si está vacío
+  if (!profile.notification_sensitivity) {
+    const emailCount = await getProcessedEmailCount(userId);
+    if (emailCount > 0) {
+      updates.notification_sensitivity = emailCount >= 20 ? "high" : "low";
+    }
+  }
+
+  if (Object.keys(updates).length > 0) {
+    await updateUserProfile(userId, updates);
+    console.log(`✅ Perfil actualizado para usuario ${userId}:`, updates);
+  }
+}
+
 async function processUser(user: { id: number; google_token: string | null; user_profile: string }) {
   // 1. Enviar alertas pendientes siempre
   await sendPendingAlerts(user.id);
@@ -145,6 +177,9 @@ async function processUser(user: { id: number; google_token: string | null; user
       scheduled_at: getNextWorkdayStart(profile),
     });
   }
+
+  // Validar y completar perfil si hay campos vacíos
+  await validateProfile(user.id, profile);
 }
 
 async function runWorker() {
